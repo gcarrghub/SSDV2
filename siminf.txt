@@ -1,0 +1,20 @@
+
+	 Simultaneous Tests for General Linear Hypotheses
+
+Multiple Comparisons of Means: Tukey Contrasts
+
+
+Fit: lm(formula = log10.y ~ groups, data = lmData)
+
+Linear Hypotheses:
+                     Estimate Std. Error t value Pr(>|t|)    
+invert - algae == 0    0.5379     0.1131   4.756 0.000765 ***
+fish - algae == 0      0.8894     0.1088   8.173 3.31e-06 ***
+amphib - algae == 0    1.3052     0.1192  10.948 8.99e-08 ***
+fish - invert == 0     0.3515     0.1021   3.443 0.003623 ** 
+amphib - invert == 0   0.7673     0.1131   6.784 2.46e-05 ***
+amphib - fish == 0     0.4158     0.1088   3.821 0.003342 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+(Adjusted p values reported -- hochberg method)
+
