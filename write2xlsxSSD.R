@@ -1,4 +1,3 @@
-library(openxlsx)
 wb <- openxlsx::createWorkbook()
 addWorksheet(wb = wb, sheetName = "Data Listing", gridLines = FALSE)
 

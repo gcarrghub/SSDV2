@@ -1,3 +1,37 @@
+packages = unique(c("devtools","shiny","shinyjs","shinyalert","shinyWidgets","rhandsontable",# only if for table output
+             "markdown","rmarkdown","knitr","htmlwidgets","sortable",
+             "magrittr","isotone","parallel","formattable","DT",
+             "RColorBrewer","multcomp","openxlsx","isotone","ADGofTest"))
+packageTests <- sapply(packages,FUN = require,character.only=TRUE)
+if(all(packageTests)){
+  cat("\n",paste(rep("#",100),collapse = ""),
+      "\n  All required packages are present.",
+      "\n",paste(rep("#",100),collapse = ""),"\n")
+}
+if(sum(!packageTests)>0){
+  cat("\n",paste(rep("#",100),collapse = ""),
+      "\n  Please wait while these required packages and their dependencies are installed:",
+      "\n   ",paste(names(packageTests[!packageTests]),collapse = " "),
+      "\n  Requires internet access and sufficient rights to install R packages on your system.",
+      "\n",paste(rep("#",100),collapse = ""),"\n")
+  install.packages(packages[!packageTests], repos = "https://cran.rstudio.com/", dependencies=TRUE)
+  ### In one case, needed to add this to a users install.packages call:  INSTALL_opts = c('--no-lock')
+  # recheck for packages
+  packageTests <- sapply(packages,FUN = require,character.only=TRUE)
+  if(all(packageTests)){
+    cat("\n",paste(rep("#",100),collapse = ""),
+        "\n  All required packages were successfully installed.",
+        "\n",paste(rep("#",100),collapse = ""),"\n")
+  }
+  if(!all(packageTests)){
+    cat("\n",paste(rep("#",100),collapse = ""),
+        "\n  Not all packages were successfully installed:",
+        "\n   ",paste(names(packageTests[!packageTests]),collapse = " "),
+        "\n",paste(rep("#",100),collapse = ""),"\n")
+  }
+}
+
+
 library(shiny)
 library(shinyjs)
 library(shinyalert)
@@ -15,7 +49,20 @@ library(formattable)
 library(DT)
 library(RColorBrewer)
 library(multcomp)
+library(openxlsx)
+
 jsResetCode <- "shinyjs.reset = function() {history.go(0)}" # Define the js method that resets the page
+
+### just in case, purge files that might be left over from a previous run
+### the code attempts to prevent this by resetting things, but it's all limits of the
+### imagination for the order things are entered, changed, etc.  The user
+### must assume the ultimate responsibility.  Any critical analysis should be run
+### from a reset tool, in the proper order.
+if(file.exists("SSDplotOutput.pdf"))unlink("SSDplotOutput.pdf")
+if(file.exists("SSD Analysis.pdf"))unlink("SSD Analysis.pdf")
+if(file.exists("SSDoutput.xlsx"))unlink("SSDoutput.xlsx")
+if(file.exists("SSD Analysis.xlsx"))unlink("SSD Analysis.xlsx")
+
 shinyUI(
   fluidPage(
     shinyalert::useShinyalert(),  # Sets up shinyalert

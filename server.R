@@ -2,7 +2,7 @@ shinyServer(function(input, output, session){
         
   ### not clear where libraries should be initialized...Currently in multiple places
   ### one on github, the "run" file will check for those needed, install, and load
-  source("libsAndFiles.R",local=TRUE)
+  #source("libsAndFiles.R",local=TRUE)
   ### just a couple of functions used in program.  Others could be added to it.
   source("helperFUNs.R",local=TRUE)
   ### fitting function, and two AOI functions
