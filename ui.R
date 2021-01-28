@@ -1,4 +1,21 @@
 library(shiny)
+library(shinyjs)
+library(shinyalert)
+library(shinyWidgets)
+library(rhandsontable)# only if for table output
+library(markdown)# for PDF/markdown output
+library(rmarkdown)
+library(knitr)
+library(htmlwidgets)
+library(sortable)
+library(magrittr)
+library(isotone)
+library(parallel)
+library(formattable)
+library(DT)
+library(RColorBrewer)
+library(multcomp)
+jsResetCode <- "shinyjs.reset = function() {history.go(0)}" # Define the js method that resets the page
 shinyUI(
   fluidPage(
     shinyalert::useShinyalert(),  # Sets up shinyalert
@@ -64,8 +81,8 @@ shinyUI(
           uiOutput("PDFbutton")
         ),
         # https://stackoverflow.com/questions/25062422/restart-shiny-session
-        useShinyjs(),                                           # Include shinyjs in the UI
-        extendShinyjs(text = jsResetCode, functions = "reset") # Add the js code to the page
+        shinyjs::useShinyjs(),                                           # Include shinyjs in the UI
+        shinyjs::extendShinyjs(text = jsResetCode, functions = "reset") # Add the js code to the page
 
 
 
