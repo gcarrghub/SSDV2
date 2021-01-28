@@ -1,581 +1,1228 @@
-library(shiny)
-library(dplyr)
-library(grid)
-library(gridExtra)
-#library(XLConnect)
-library(openxlsx)
-library(plotrix)
+shinyServer(function(input, output, session){
+  ### not clear where libraries should be initialized...Currently in multiple places
+  ### one on github, the "run" file will check for those needed, install, and load
+  source("libsAndFiles.R",local=TRUE)
+  ### just a couple of functions used in program.  Others could be added to it.
+  source("helperFUNs.R",local=TRUE)
+  ### fitting function, and two AOI functions
+  source("SSDfitFUN.R",local = TRUE)
+  ### a function that I modified from the rriskDistributions package
+  source("rriskFitdist.GJC.R",local = TRUE)
+  ### plotting functions.
+  source("plotFUNs.R",local = TRUE)
 
-if(dir.exists("www")){
-        #delete leftover files if they are present from previous runs
-        #this only matters when the repository is set up in rstudio
-        #and run inside of rstudio in usual way.  When the tool is run
-        #through a runGitHub(...) command, it creates temporary space 
-        #that is removed on completion (the tool implementation is killed)
-        pdfFiles <- list.files(path="www",pattern = "pdf$",full.names = TRUE)
-        pngFiles <- list.files(path="www",pattern = "png$",full.names = TRUE)
-        xlsxFiles <- list.files(path="www",pattern = "xlsx$",full.names = TRUE)
-        files2remove <- c(pdfFiles,pngFiles,xlsxFiles)
-        unlink(files2remove)
-}
-if(!dir.exists("www"))dir.create("www")
-shinyServer(function(input, output, session, clientData) {
-     values <- reactiveValues()
-     values$zeros <- FALSE
-     values$annotatedplot <- NULL
-     values$cleanplot <- NULL
-     values$stamp <- ""
+  #the parallel processing of leave one out needs to know the environment
+  #to export functions to the cluster.
+  serverEnv <- environment()
 
-     source("BVFunction2-0.R", local = TRUE)
-     
-     #use a reactive value that can be used to control what is shown in tabs
-     #for example, to clear when new data are selected
-     rv <- reactiveValues()
-     rv$amsg <- "" #amsg = "a message"
-     
-     displayResults <- reactive({ return(rv$amsg!="" & regexpr("failed", rv$amsg) < 1) })
-     clearResults <- reactive({ return(!(rv$amsg!="" & regexpr("failed", rv$amsg) < 1)) })
-     #reactive(displayResults(),{if(!displayResults()){
-     #        output$plot <- NULL
-     #        output$resultsTable <- NULL
-     #        output$messages <- NULL
-     #        output$downloadPlot <- NULL
-     #        output$downloadResults <- NULL
-     #}})
-     #session$onFlush(function(){
-     #   write(strftime(Sys.time(),"%Y  %m/%d %H:%M:%S" ), file="counter/counter.txt", append = T, sep="\n")
-     # }
-     # )
-     
-     ### Check the file extension so the program will know how to read it in 
-     getFileExt <- reactive({
-          # Read in the .csv input data
-          inFile <- input$inputFile
-          if(!is.null(inFile)){
-               fileExt <- sub(".*\\.","",inFile$name)
-               return(fileExt)
-               #updateTabsetPanel(session,"tabManager",selected="dataTab")
-          } else return(NULL)
-     })
-     
-     ### If it is xls or xlsx, select the sheet to use
-     ### By default, the first (or only if the case) sheet is selected
-     output$sheetUI <- renderUI({
-          fileExt <- getFileExt()
-          #if(debugTF)print(fileExt)
-          #print(fileExt)
-          inFile <- input$inputFile
-          #print(inFile)
-          #print(grepl("xls",fileExt))
-          #print(!is.null(fileExt) && grepl("xls",fileExt))
-          ### XLCONNECT here
-          if( !is.null(fileExt) && grepl("xls",fileExt) ){
-               ### wb <- loadWorkbook(inFile$datapath)
-               ### shNames <- getSheets(wb)
-                  #print(str(inFile))
-                  wb <- loadWorkbook(file = inFile$datapath)
-                  #print(str(wb))
-                  shNames <- wb$sheet_names
-                  shNames <- shNames[sapply(shNames,FUN=function(SN){
-                          testSheet <- readWorkbook(wb, sheet=SN, colNames=TRUE)
-                          numericCols <- sum(unlist(lapply(testSheet,is.numeric)))
-                          (numericCols>1)
-                  })]
-                  #print(shNames)
-               selectInput('shName', 'Select Sheet Containing Data', shNames)
-          } else NULL
-     })
-     
-     
-     
-     ## Observe is like a reactive expression. I think it is appropriate to change tabs to the data tab each time the file 
-     ##  extension is changed.  Better to switch any time any of the data selection options change
-     observe({
-          ## Throw dataOrg() in so that anytime a selection is made that has the potential to change the data, redirect the client to the 
-          ##   data tab.  This is causing shiny to crash IDK why.  I have tried inputDataFile() as well but to no avail.
-          if(!is.null(getFileExt()))updateTabsetPanel(session,"tabManager",selected="dataTab")
-          
-     })
-     
-     ### read in the data, depending on type as given by file extension
-     getData <- reactive({
-          req(input$inputFile)
-          inFile <- input$inputFile
-          if(!is.null(inFile)){
-               values$zeros <- FALSE
-               fileExt <- sub(".*\\.","",inFile[1])
-               
-               ## Use grepl because readWorksheet works with both xls and xlsx versions of wb.
-               if(grepl("xls",fileExt)){
-                       ### XLCONNECT here
-                     wb <- loadWorkbook(inFile$datapath)# same in XLconnect as openxlsx
-                    shName <- input$shName
-                    if(is.null(shName)){
-                      indata <- NULL
-                    } else {
-                      ### indata <- readWorksheet(wb, sheet=shName, header=TRUE)### XLCONNECT here
-                      indata <- readWorkbook(wb, sheet=shName, colNames=TRUE)### XLCONNECT here
-                    }
-               }
-               if(fileExt=="txt"){
-                    indata <- read.table(inFile$datapath,header=TRUE)
-               }
-               if(fileExt=="csv"){
-                    indata <- read.csv(inFile$datapath,header=TRUE)
-               }
-               return(indata=indata)
-          }
-          
-     })
+  # if reset button is pressed
+  observeEvent(input$reset_button, {js$reset()})
 
-     ### Once the data has been selected, set it up for analysis,
-     ### which is to say identify the dose and response variables,
-     ### and check for zeros
-     dataOrg <- reactive({
-          ### getData(), above, is how to read the file
-          ### req(getData()) is to say don't go further 
-          ### unless it returns data..
-          shiny::req(getData())
-          namesInp <- names(getData())
-          #If the expected names are present, assume we are good to go
-          if(all(c("y","dose") %in% namesInp)){
-               BVdata <- getData()[,c("y","dose")]
-          }
-          #If not, user has to choose which vars to use
-          if(!(all(c("y","dose") %in% namesInp))){
-               dataDirty <- getData()
-               ## Have to make sure the UI is generated before I subset.
-               if(is.null(input$nameDoseCol))return(NULL)
-               BVdata <- dataDirty[,c(input$nameYCol,input$nameDoseCol)]
-               names(BVdata) <- c("y","dose")
-          }
+  #when rvs$setupComplete is 0, it means that the preview button
+  #must be clicked to commit selections and view data plot
+  #prior to analysis being run.  This will result in rvs$setupComplete
+  #being set to 1.
 
-          ### set flag on whether zeros are present
-          if(any(BVdata$y <= 0)){
-               values$zeros <- TRUE
-          } else {
-               values$zeros <- FALSE
-          }
-          fBasedCritVal <- qf(0.95,1,nrow(BVdata)-1)
-          BVdata <- BVdata[order(BVdata$dose),]
-          uDoses <- sort(unique(BVdata$dose))
-          nzDoses <- uDoses[uDoses>0]
-          return(list(BVdata=BVdata,fBasedCritVal=fBasedCritVal,nzDoses=nzDoses))
-     })
-     
-     ### This implements the changes to BVdata when Ignore or Replace is selected
-     dataOrgZeroFixed <- reactive({
-             #BVdata has to be present in output from dataOrg to continue
-             #print(c(varFixed=as.logical(input$varFixed)))
-             #source("BVFunction2-0.R", local = TRUE)
-             shiny::req(dataOrg()[["BVdata"]])
-             BVdata <- dataOrg()[["BVdata"]]
-             ### values$zeros is set in dataOrg(), so it has to be ready here
-             if(values$zeros){
-                     shiny::req(is.element("zeroOptSelect",names(input)),is.element("varFixed",names(input)))
-                     shiny::req(!is.null(input$zeroOptSelect),!is.null(input$varFixed))
-                     #BVdata <- dataOrg()[["BVdata"]]
-                     ### Important change:  If variance is constant, do not need to remove/delete <=0
-                     ### So when constant is chosen, "Ignore" will mean just keep the value, 
-                     ### or you could still change it with "Replace", in which case
-                     ### the user will still have to choose something.
-                     #if(!is.null(input$zeroOptSelect)){
-                     if(input$zeroOptSelect == "Drop"){
-                             BVdata <- BVdata %>% filter(y > 0)
-                     }
-                     if(input$zeroOptSelect == "Replace"){
-                             BVdata$y <- ifelse(BVdata$y <= 0, as.numeric(input$zeroSub), BVdata$y)
-                     }
-                     #}
-             }
-             #showTab(inputId = "tabs",target = "Data For Analysis")
-             output$baseplot <- renderPlot({
-                     #isolate
-                     ({
-                             plotBV.LOG(dataOrgZeroFixed(),
-                                        bestPars = NULL,
-                                        ECxTarget=input$ECXvalue,
-                                        goodFit = FALSE,
-                                        basePlot = TRUE,
-                                        ylimInput=c(0,max(na.omit(dataOrgZeroFixed()$y))),
-                                        xlim=10^range(c(floor(log10(min(dataOrgZeroFixed()$dose[dataOrgZeroFixed()$dose>0])))-1,ceiling(log10(max(dataOrgZeroFixed()$dose))))),
-                                        clean=TRUE,littleLogs=FALSE,xlabel = input$xlab, ylabel = input$ylab)
-                             title(main="Input data scatter plot")
-                     })
-                     
-             })
-             return(BVdata)
-     })
-     
-     ### When zeros are present, modify the lefthand data section to open
-     ### a drop-down selection of choices to handle zero values 
-     ### (the Ignore or Replace drop-down)
-     output$zeroOpt <- renderUI({
-             shiny::req(dataOrg()[["BVdata"]],input$varFixed)
-             df <- dataOrg()[["BVdata"]]
-             if(values$zeros & !as.logical(input$varFixed)){
-                     return(radioButtons("zeroOptSelect","Action on values <= 0",
-                                         choices=c("Drop","Replace"),
-                                         inline=TRUE,
-                                         width="100%",selected = "Replace")
-                     )
-                     #return(selectInput("zeroOptSelect","Select an option for handling values <=0", choices=c(" ","Ignore","Replace")))
-             } else if(values$zeros & as.logical(input$varFixed)){
-                     return(radioButtons("zeroOptSelect","Action on values <= 0",
-                                         choices=c("Drop","Keep"),
-                                         inline=TRUE,
-                                         width="100%",selected = "Keep")
-                     )
-                     #return(selectInput("zeroOptSelect","Select an option for handling values <=0", choices=c(" ","Ignore","Replace")))
-             } else {
-                     return(NULL)
-             }
-     })
-     
-     ### and after the drop-down selection, either drop the zeros completely,
-     ### or open a field for value entry if user has selected "Replace"
-     ### When "Replace" is selected, open a text entry box for the new value
-     output$zeroCond <- renderUI({
-             shiny::req(dataOrg()$BVdata)
-             df <- dataOrg()$BVdata
-             if(any(df$y <= 0)){
-                     if(length(input$zeroOptSelect)>0){#don't do following unless selection has been made....
-                             if(input$zeroOptSelect!=" "){
-                                     if(input$zeroOptSelect=='Replace'){
-                                             # default value changed from NULL to ""
-                                             # (NULL is harder to deal with, causes silent errors etc)
-                                             return(textInput("zeroSub","Replacement value for those <=0",value=""))
-                                     }
-                             }
-                     }
-             }
-             return(NULL)
-     })
-     
-     
-     ### When there is not a column named "y", select one as the responses
-     output$ycolUI <- renderUI({
-             shiny::req(getData())
-             namesInFrame <- names(getData())
-             if(all(c("y","dose") %in% namesInFrame)){
-                     NULL
-             } else {
-                     namesChoices <- namesInFrame
-                     #if(is.element("nameDoseCol",names(input))){
-                     #       namesChoices <- namesChoices[namesChoices!=input$nameDoseCol]
-                     #}
-                     return(selectInput(inputId="nameYCol","Select Response Variable",
-                                        namesChoices,namesChoices[1]))
-             }
-     })
-     
-     ### When there is not a column named "dose", select one as the doses
-     output$doseColUI <- renderUI({
-             shiny::req(getData())
-             namesInFrame <- names(getData())
-             if(all(c("y","dose") %in% namesInFrame)){
-                     NULL
-             } else {
-                     namesChoices <- namesInFrame
-                     if(is.element("nameYCol",names(input))){
-                             #this prevents a user from selecting the same column of data for both response and dose
-                             namesChoices <- namesChoices[namesChoices!=input$nameYCol]
-                     }
-                     return(selectInput(inputId="nameDoseCol","Select Concentration Variable",
-                                        namesChoices,namesChoices[1]))
-             }     
-     })
-     
-     #Controls when the button that runs the analysis is available.  It is
-     #taken away, for example, when zeros are present.
-     output$button <- renderUI({
-             # if no zero options stuff it means ready to go as is
-             # zeroOptSelect will be NULL when there are no zeros in the data,
-             # or when an action to deal with zeros has not be selected.
-             # This is not foolproof.  The run button will show if, for 
-             # example, the replacment is itself <= 0, or a non-numeric string.
-             #print(c(zeroOptSelect=input$zeroOptSelect,zeroSub=input$zeroSub))
-             if(!values$zeros){
-                     return(actionButton("updateRes","Calculate Results"))
-             }
-             if(values$zeros){
-                     #only get in here if a <=0 value is detected in the data
-                     shiny::req(is.element("zeroOptSelect",names(input)))
-                     if(input$zeroOptSelect!="Replace")return(actionButton("updateRes","Calculate Results"))
-                     #zeroSub will be in the input list once a value is begun by the user
-                     #this is facilitated now by making the default value "" instead of NULL
-                     if(input$zeroOptSelect=="Replace" & is.element("zeroSub",names(input))){
-                             #print(c(zeroOptSelect=input$zeroOptSelect,zeroSub=input$zeroSub))
-                             #as long as it's a number >0, will allow the analysis to run
-                             ready2go <- FALSE
-                             is.a.number <- is.finite(as.numeric(input$zeroSub))
-                             if(is.a.number){if(as.numeric(input$zeroSub)>0)ready2go <- TRUE}
-                             if(!ready2go)return(p("Please enter a positive value to replace observations <=0.", style="color:red"))
-                             if( ready2go)return(actionButton("updateRes","Calculate Results"))
-                     }
-             }
-             })
-     
-     ### In the data tab, show the data whenever it is updated (I think)
-     ### not 100% sure how this works, required to changes to dataOrgZeroFixed()
-     ### where it also passes back the data if no zeros are found.
-     output$DataTab <- renderTable({
-          # only render when there's something to...render...
-          shiny::req(dataOrg()$BVdata)
-          dataOrgZeroFixed()
-     })
+  # Reactive vars:
+  #   1.  setupComplete
+  #       0 means not ready, as in, preview data has not been completed
+  #       1 means the the preview button has been clicked, so data should be ready for analysis
+  #   2.  SSD.complete
+  #       0 after setupComplete = 1 (ready for analysis but not complete)
+  #       1 when end of SSD code is reached.
+  #   3.  units
+  #       Simply holds the units input string
+  #   4.  indata
+  #       The input data, after processing (ie, data input to the analysis code)
 
-     ### show the plot for output
-     output$plot <- renderPlot({
-          values$cleanplot
-     })
-     
-     
-     getShortFileName <- reactive({
-          paste0("BVoutput", values$stamp)
-     })
-     
-     getPDFfilename <- reactive({
-          paste0("www/", getShortFileName(), ".pdf")
-     })
-     
-     getExcelfilename <- reactive({
-          paste0("www/", getShortFileName(), ".xlsx")
-     })
+  # Initialize reactives
+  rvs <- reactiveValues()
+  rvs$setupComplete <- 0
+  rvs$SSD.complete <- 0
+  rvs$dataImported <- 0
+  rvs$dataChecked <- 0
+  rvs$SSDdata <- 0
+  output$dataChecked <- reactive({rvs$dataChecked})
+  outputOptions(output,"dataChecked",suspendWhenHidden = FALSE)
+  output$setupComplete <- reactive({rvs$setupComplete})
+  outputOptions(output,"setupComplete",suspendWhenHidden = FALSE)
 
-     ### THE MAIN ANALYSIS CONTROL
-     observeEvent(input$updateRes, {
-          updateTabsetPanel(session, "tabs", "Results")
-          values$stamp <- format(Sys.time(), "%Y%m%d%H%M%S")
-          
-          withProgress({
-               setProgress(message = "Please Wait")
-               varFixed <- as.logical(input$varFixed)
-               #source("BVFunction2-0.R", local = TRUE)
-               if(input$debugPrint)print(paste("Working directory:",getwd()))
-               setProgress(detail = "Running analysis and creating pdf")
-               pdffilename <- getPDFfilename()
-               pdf(pdffilename, width = 9)
-               par(mai=c(1,1,1,0.1))
-               #remove fit-related objects in global environment before each run
-               fitOBJs <- c("bestParsEC50","bestParsECx","bestParsLL",
-                              "fBasedCritVal","goodFlag","lowerCI",
-                              "upperCI")
-               checkOBJs <- sapply(fitOBJs,FUN = exists,envir = .GlobalEnv)
-               if(any(checkOBJs))remove(list=fitOBJs[checkOBJs],envir = .GlobalEnv)
-               results <- fitBV.PLL (
-                    BVdata=dataOrgZeroFixed(),
-                    ECXvalue=input$ECXvalue,
-                    fileName=NULL,
-                    verbose=input$debugPrint,
-                    do3Dstart=FALSE,
-                    FORCE=FALSE,
-                    zeroSub=NULL,
-                    varFixed=as.logical(input$varFixed),
-                    ylabel = input$ylab,
-                    xlabel = input$xlab)
-               grid.newpage()
-               grid.table(dataOrgZeroFixed(), rows = NULL)
-               #addtable2plot(.5,1,dataOrgZeroFixed(),xjust=.5,yjust=0)	 
-               #print("Check 1:  Sever finish fit")
-               #print(results)
-               #print(str(results))
-               dev.off()
-               setProgress(detail = "Creating table")
-               #print("Check 2:  Sever create table")
-               resultsTable <- data.frame(EC.level.PCT = 100*results$EC.level, 
-                                          ECx = as.numeric(to3(results$ECx)), 
-                                          LCL.95 = ifelse(goodFlag,yes = as.numeric(to3(results$LCL.95)),no = NA), 
-                                          UCL.95 = ifelse(goodFlag,yes = as.numeric(to3(results$UCL.95)),no = NA))
-               #print("Check 3:  Sever finished table")
-               output$resultsTable <- shiny::renderTable(expr = {resultsTable},bordered = TRUE,na = "N/A")
-               
-               setProgress(detail = "Creating plot")
-               
-               #print("Check 2:  Sever start plot")
-               #print(c(goodFlag=goodFlag,ECXvalue=input$ECXvalue))
-               output$plot <- renderPlot({
-                    isolate({
-                         plotBV.LOG(dataOrgZeroFixed(),
-                                    bestPars = bestParsECx,
-                                    ECxTarget=input$ECXvalue,
-                                    goodFit = goodFlag,
-                                    ylimInput=c(0,max(dataOrgZeroFixed()$y,exp(lowerCI["Asym"]),exp(upperCI["Asym"]))),
-                                    xlim=10^range(c(floor(c(lowerCI["xmid"],log10(min(dataOrgZeroFixed()$dose[dataOrgZeroFixed()$dose>0]))))-1,ceiling(c(upperCI["xmid"],log10(max(dataOrgZeroFixed()$dose)))))),
-                                    clean=!input$annot8Plot,littleLogs=FALSE,xlabel = input$xlab, ylabel = input$ylab)
-                         if(!goodFlag)title(main="Check data/results -- Model fit suggests poor fit or no trend?")
-                    })
-                    
-               })
-               
-               output$messages <- renderUI({
-                       shiny::req(values$zeros,input$zeroOptSelect)
-                       if(values$zeros){
-                               if(input$zeroOptSelect == "Drop"){
-                                       negmessage <- "Some values <= 0 have been dropped from the analysis."
-                               }
-                               if(input$zeroOptSelect == "Keep"){
-                                       negmessage <- "Some values <= 0 are included in the analysis."
-                               }
-                               if(input$zeroOptSelect == "Replace"){
-                                       negmessage <- paste0("All values <= 0 have been replaced with ", input$zeroSub, ".")
-                               }
-                       } else {
-                               negmessage <- "There are no response values <= 0 in the analyzed dataset."
-                       }
-                       if(is.na(as.numeric(resultsTable$LCL.95))){
-                               lclmessage <- "The lower confidence limit could not be calculated."
-                       } else {
-                               lclmessage <- "The lower confidence limit calculation was successful."
-                       }
-                       if(is.na(as.numeric(resultsTable$UCL.95))){
-                               uclmessage <- "The upper confidence limit could not be calculated."
-                       } else {
-                               uclmessage <- "The upper confidence limit calculation was successful."
-                       }
-                       return(p(negmessage, br(), lclmessage, br(), uclmessage))
-                       
-               })
-               
-               setProgress(detail = "Creating Excel")
-                
-               numSheetName <- "Numerical Results"
-               plotSheetName <- "Plot"
-               dataSheetName <- "Analyzed Data"
-               xlsxfilename <- paste0("www/BVoutput", values$stamp, ".xlsx")
-               
-               if(FALSE){### old XLConect approach
-                       wb <- loadWorkbook(xlsxfilename, create = T)### XLCONNECT here
-                       createSheet(wb, numSheetName)### XLCONNECT here
-                       writeWorksheet(wb, resultsTable, numSheetName)### XLCONNECT here
-                       writeWorksheet(wb, date(), numSheetName, startRow=3, startCol=ncol(resultsTable)+2, header=FALSE)### XLCONNECT here
-                       setColumnWidth(wb, numSheetName, 1:(ncol(resultsTable)+2), -1)### XLCONNECT here
-               }
-               wb <- createWorkbook(creator = "BV shiny app")
-               addWorksheet(wb = wb,sheetName = numSheetName,zoom = 200)
-               #options("openxlsx.numFmt" = "#")
-               setColWidths(wb = wb, sheet = numSheetName, cols = 1:4, widths = 15)
-               writeDataTable(wb = wb,sheet = numSheetName,x = resultsTable,withFilter=FALSE)
-               #options("openxlsx.numFmt" = NULL)
-                              #,
-                              #tableStyle = createStyle(fontSize = 14),
-                              #headerStyle = createStyle(fontSize = 14))
-               writeData(wb = wb,sheet = numSheetName,x = date(), startRow=4, startCol=1)
-               #####createSheet(wb, plotSheetName)### XLCONNECT here
-               addWorksheet(wb = wb,sheetName = plotSheetName,zoom = 200)
-               cleanPlotFilename <- paste0("www/cleanResPlot", values$stamp, ".png")
-               png(cleanPlotFilename,height=6,width=8,units = "in",res = 200)#,type = "cairo")
-               par(mai=c(1,1,0.1,0.1))
-               plotBV.LOG(inputData = dataOrgZeroFixed(),
-                          bestPars = bestParsECx,
-                          ECxTarget=input$ECXvalue,
-                          goodFit = goodFlag,
-                          ylimInput = c(0,max(dataOrgZeroFixed()$y,exp(lowerCI["Asym"]),exp(upperCI["Asym"]))),
-                          xlimInput = 10^range(c(floor(c(lowerCI["xmid"],log10(min(dataOrgZeroFixed()$dose[dataOrgZeroFixed()$dose>0]))))-1,ceiling(c(upperCI["xmid"],log10(max(dataOrgZeroFixed()$dose)))))),
-                          clean=TRUE,littleLogs=FALSE,xlabel = input$xlab, ylabel = input$ylab)
-               dev.off()
-               ### createName(wb, name="cleanPlot", formula=paste0(plotSheetName,"!$A$1"))### XLCONNECT here
-               ### addImage(wb, filename=cleanPlotFilename, name="cleanPlot", originalSize=TRUE)### XLCONNECT here
-               insertImage(wb = wb,sheet = plotSheetName,file = cleanPlotFilename,
-                           height = 6,width = 8)
-               
-               dirtyPlotFilename <- paste0("www/dirtyResPlot", values$stamp, ".png")
-               png(dirtyPlotFilename,height=6,width=8,units = "in",res = 200)#,type = "cairo")
-               par(mai=c(1,1,1,0.1))
-               plotBV.LOG(inputData = dataOrgZeroFixed(),
-                          bestPars = bestParsECx,
-                          ECxTarget=input$ECXvalue,
-                          goodFit = goodFlag,
-                          ylimInput=c(0,max(dataOrgZeroFixed()$y,exp(lowerCI["Asym"]),exp(upperCI["Asym"]))),
-                          xlim=10^range(c(floor(c(lowerCI["xmid"],log10(min(dataOrgZeroFixed()$dose[dataOrgZeroFixed()$dose>0]))))-1,ceiling(c(upperCI["xmid"],log10(max(dataOrgZeroFixed()$dose)))))),
-                          clean=FALSE,littleLogs=FALSE,xlabel = input$xlab, ylabel = input$ylab)
-               
-               dev.off()
-               ### createName(wb, name="dirtyPlot", formula=paste0(plotSheetName,"!$N$1"))### XLCONNECT here
-               ### addImage(wb, filename=dirtyPlotFilename, name="dirtyPlot", originalSize=TRUE)### XLCONNECT here
-               insertImage(wb = wb,sheet = plotSheetName,file = dirtyPlotFilename,startCol = 13,
-                           height = 6,width = 8)
-               
-               ### createSheet(wb, dataSheetName)### XLCONNECT here
-               ### writeWorksheet(wb, dataOrgZeroFixed(), dataSheetName)### XLCONNECT here
-               addWorksheet(wb = wb,sheetName = dataSheetName,zoom = 200)
-               writeDataTable(wb = wb,sheet = dataSheetName,x = dataOrgZeroFixed())
-               
-               saveWorkbook(wb = wb,file = xlsxfilename,overwrite = TRUE)
-               ### saveWorkbook(wb, xlsxfilename)### XLCONNECT here
-               rv$amsg <- "complete"
-               
+  ### effect levels are at different default levels by convention, so
+  ### this just sets a different default value for each analysis type.
+  output$effectSelects <- renderUI({
+    tagList(
+      conditionalPanel(
+        condition = "input.analysisType=='Count'",
+        sliderInput("ECXvalue.Count", "Effect Level", 0.05, .95, 0.50, step = 0.05)
+      ),
+      conditionalPanel(
+        condition = "input.analysisType=='BMD'",
+        sliderInput("ECXvalue.BMD", "Effect Level", 0.05, .95, 0.10, step = 0.05)
+      ),
+      conditionalPanel(
+        condition = "input.analysisType=='Continuous'",
+        sliderInput("ECXvalue.Cont", "Effect Level", 0.05, .95, 0.10, step = 0.05)
+      ),
+      conditionalPanel(
+        condition = "input.analysisType=='SSD'",
+        sliderInput("ECXvalue.SSD", "Effect Level", 0.05, .50, 0.05, step = 0.05)
+      )
+    )
+  })
+
+  # set analysis options for each (SSD only for now)
+  # this establishes input variables that will be used for next steps below
+  observe({
+    req(input$analysisType)
+    ### At this point, don't allow anything but SSD selection
+    if(input$analysisType != "SSD"){
+      alerID <- shinyalert(
+        title = "Error",
+        text = "Only SSD analysis is possible at this time.  Tool will Reset.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE,
+        callbackR = function(x){js$reset()}
+      )
+
+    }
+
+    if(FALSE){
+      if(input$analysisType=="Count" |
+         input$analysisType=="SK" |
+         input$analysisType=="BMD"){
+        output$defaultVars <- renderUI(HTML(
+          paste(
+            h5(HTML("Required (default)</br>columns:"),.noWS = c("after","before","outside")),
+            p(HTML("<ul><li>doses</li><li>responses</li><li>sizes</li></ul>"),.noWS = c("after","before","outside"))
+          )
+        )
+        )}
+
+      if(input$analysisType=="Continuous"){
+        output$defaultVars <- renderUI(HTML(
+          paste(
+            h5(HTML("Required (default)</br>columns:"),.noWS = c("after","before","outside")),
+            p(HTML("<ul><li>doses</li><li>responses</li></ul>"),.noWS = c("after","before","outside"))
+          )
+        )
+        )}
+    }
+
+    ### show the default variable names (the code is more general, such as ignores case...)
+    if(input$analysisType=="SSD"){
+      output$defaultVars <- renderUI(HTML(
+        paste(
+          h5(HTML("Required (default)</br>columns:"),.noWS = c("after","before","outside")),
+          p(HTML("<ul><li>species</li><li>responses</li><li>(groups)</li></ul>"),.noWS = c("after","before","outside"))
+        )
+      )
+      )
+      output$SSDoptshead <- renderUI({
+        p("Analysis options:",style = "font-size: 24px; padding: 0px 0px; margin:0%",.noWS = c("before","after","outside"))
+      })
+      output$SSD.2.1 <- renderUI({
+        checkboxInput(inputId = "doLOO",label = "Leave 1 Out",value = FALSE)
+      })
+      output$SSD.2.2 <- renderUI({
+        checkboxInput(inputId = "doAOI",label = "Add 1 In",value = FALSE)
+      })
+      output$SSD.2.3 <- renderUI({
+        checkboxInput(inputId = "doGrps",label = "Grouping",value = FALSE)
+      })
+      output$SSD.2.4 <- renderUI({
+        checkboxInput(inputId = "doGrays",label = "Grayscale",value = FALSE)
+      })
+      output$SSD.2.5 <- renderUI({
+        checkboxInput(inputId = "doLegend",label = "Legend on plots",value = FALSE)
+      })
+    }
+    if(input$analysisType!="SSD"){
+      output$SSD.2.1 <- NULL
+      output$SSD.2.2 <- NULL
+      output$SSD.2.3 <- NULL
+      output$SSD.2.4 <- NULL
+      output$SSD.2.5 <- NULL
+      output$SSDoptshead <- NULL
+    }
+  })
+
+
+  #create a reactive expression that will be check for going back to
+  #"beginning", without a complete reset
+  goBack <- reactive({
+    list(
+      input$analysisType,
+      input$pasteData,
+      input$doGrps
+      #input$doGrays
+      #input$doLegend
+    )
+  })
+  observeEvent(goBack(),
+               {
+                 print("Inside observe event on goBack()")
+
+                 rvs$setupComplete <- 0
+                 rvs$SSD.complete <- 0
+                 rvs$dataImported <- 0
+                 rvs$dataChecked <- 0
+                 rvs$SSDdata <- 0
+                 rvs$finalDF <- NULL
+                 rvs$inputDF <- NULL
+                 #output$dataChecked <- reactive({rvs$dataChecked})
+                 #Don't go further unless something is pasted into the data box
+                 req(input$pasteData)
+                 if(is.null(input$pasteData))return(indata=NULL)
+                 print((input$pasteData))
+                 #put data into regular object and process it
+                 inputText <- (input$pasteData)
+                 print(inputText)
+                 inputLines <- strsplit(inputText,split = "\n")[[1]]
+                 print(inputLines)
+                 varNames <- scan(text=inputLines[[1]],sep="\t",what=character())
+                 print(varNames)
+                 dataBody <- t(sapply(inputLines[-1],FUN=function(x)scan(text=x,sep="\t",what=character())))
+                 dimnames(dataBody) <- list(NULL,NULL)
+                 print(dataBody)
+                 inputDF <- structure(as.data.frame(dataBody,stringsAsFactors=FALSE),names=make.names(varNames))
+                 print(inputDF)
+                 #above results in character variables only.  Here, if most of the entries in a variable
+                 #can be converted to numeric, then convert it to numeric
+                 for(i in 1:ncol(inputDF)){
+                   if(sum(is.na(as.numeric(inputDF[,i])))<=nrow(inputDF)/2){
+                     inputDF[,i] <- as.numeric(inputDF[,i])
+                   }
+                 }
+                 print(c("Data import complete"))
+                 rvs$dataImported <- 1
+                 rvs$inputDF <- inputDF
+                 # https://community.rstudio.com/t/extend-width-of-column-with-renderdatatable-in-shiny/50906
+                 outputDT.Raw <- as.datatable(formattable(inputDF),
+                                              #class = 'row-border stripe hover compact nowrap',
+                                              class = 'stripe compact',
+                                              #escape = FALSE,
+                                              options = list(columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                                             #autoWidth = TRUE,
+                                                             pageLength = 10, info = FALSE,
+                                                             lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                                             scrollX = TRUE, scrollY = FALSE,
+                                                             paging = TRUE, ordering = FALSE,
+                                                             searching = FALSE))
+                 #options=list(autoWidth = TRUE,scrollX = FALSE,scrollY = FALSE,searching = FALSE))
+                 output$DTtableRaw <- DT::renderDT(outputDT.Raw)
+               },ignoreInit = TRUE)
+
+
+  ### observeEvent(input$xLab,{
+  ###  parenPos <- gregexpr(pattern="[()]",text = input$xLab)[[1]]
+  ###  rvs$units <- substring(isolate(input$xLab),first=parenPos[1]+1,last=tail(parenPos,1)-1)
+  ### })
+
+  ### read the data that has been pasted in.  This is independent of the type of analysis
+
+  # Effect level conventions change with the type of experiment/analysis, so they
+  # are set independently here
+
+  #GRAPH options
+  observe({
+    print("In graph options setups")
+    output$graphOpts <- renderUI({
+      tagList(
+        h3("Finalize inputs above",style="color: red"))})
+    print(c(dataImported = rvs$dataImported, dataChecked=rvs$dataChecked,nullFinal = as.numeric(!is.null(rvs$finalDF))))
+    req(rvs$dataImported == 1 & rvs$dataChecked == 1 & !is.null(rvs$finalDF))
+    output$graphOpts <- renderUI({
+      tagList(
+        h3("Graphics options:"),
+        splitLayout(
+          sliderInput("figH", label = "Fig Ht (in)",  min = 3,max = 12,value = 8,step = 0.5),
+          sliderInput("figW", label = "Fig Wd (in)",  min = 3,max = 12,value = 8,step = 0.5)
+        ),
+        splitLayout(
+          sliderInput("axisSize", label = "Tick Labels",min = 0.1,max = 4,value = 1,step = 0.05),
+          sliderInput("labelSize",label = "Axis Labels",  min = 0.1,max = 4,value = 1,step = 0.05),
+          sliderInput("lineSize",label = "Line/Point Weight",  min = 0.1,max = 4,value = 1,step = 0.05)
+        )
+      )
+    })
+  })
+
+  #on new data import, or a change in analysis type, redo the variable matching
+  #here, instead of everything in one block, do each anlysis type separately
+  observe({
+    req(input$analysisType=="SSD")
+    req(rvs$dataImported == 1 & rvs$dataChecked == 0)# & is.null(rvs$finalDF))
+    #shiny::req(getData())
+    testData <- rvs$inputDF
+    #req({rvs$dataImported == 1})
+    namesInFrame <- names(testData)
+    source("ComboDragDrops.R",local = TRUE)
+    print("build variable selections interface")
+    print(input$analysisType)
+    if(!input$doGrps){
+      specMatch <- respMatch <-0
+      if(all(c("species","responses") %in% namesInFrame)){
+        print("Default vars found")
+        specMatch <- which(namesInFrame=="species")
+        respMatch <- which(namesInFrame=="responses")
+        output$varSelects <- renderUI({
+          tagList(
+            selectInput(inputId="sort_x","Species:","species"),
+            selectInput(inputId="sort_y","Responses/NOECs:","responses")
+          )
+        })
+        print(c(species=input$species,responses=input$responses))
+        #print("Set SSDdata = 1")
+        #rvs$SSDdata <- 1
+        #rvs$dataChecked <- 1
+      }
+      #if exact matches not found, try approximate
+      if(prod(c(respMatch, specMatch))==0){
+        #
+        specMatch <- respMatch <-0
+        namesLC <- tolower(namesInFrame)
+        if(any(regexpr("spec",namesLC)>0))specMatch<- which(regexpr("spec",namesLC)>0)
+        if(any(regexpr("resp",namesLC)>0))respMatch<- which(regexpr("resp",namesLC)>0)
+        if(any(regexpr("noec",namesLC)>0))respMatch<- which(regexpr("noec",namesLC)>0)
+        if(specMatch>0 & respMatch>0){
+          output$varSelects <- renderUI({
+            tagList(
+              selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
+              selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch])
+            )
           })
-     })
-     
-     #observeEvent(dataOrg(), {
-     #        #observeEvent(dataOrgZeroFixed(), {
-     #     updateTabsetPanel(session,"tabs", "Data For Analysis")
-     #})
-     
-     ### (I think) whenever the data change, update the data tab and clear out results tab
-     inputChanges <- reactive({list(dataOrgZeroFixed(),dataOrg(),input$ECXvalue,input$varFixed)})
-     observeEvent(inputChanges(), {
-             #print(rv$amsg)
-             rv$amsg <- ""
-             output$plot <- NULL
-             output$resultsTable <- NULL
-             output$messages <- renderUI({
-                     p("Do not download files here unless data table/plot are displayed.
-                       Otherwise these files may be for a previously run analysis.")})
-             updateTabsetPanel(session,"tabs", "Data For Analysis")
-     })
-     #based on rv$amsg, only download a file when an analysis has been completed,
-     #and no changes to data or analysis params have been selected.  So the one
-     #watchout is that if you are doing multiple runs, you need to download the
-     #output before doing anything else.
-     observeEvent({rv$amsg},{
-             #print(c(rv.amsg=rv$amsg))
-             if(rv$amsg==""){
-                     output$downloadPlot <- downloadHandler(
-                             filename=paste0(getShortFileName(), ".pdf"),
-                             content=function(file){} 
-                     )
-                     output$downloadResults <- downloadHandler( 
-                             filename=paste0(getShortFileName(), ".xlsx"),
-                             content=function(file){}
-                     )
-             }
-             if(rv$amsg=="complete"){
-                     output$downloadPlot <- downloadHandler(
-                             filename=paste0(getShortFileName(), ".pdf"),
-                             content=function(file){
-                                     file.copy(getPDFfilename(), file)
-                             }   
-                     )
-                     output$downloadResults <- downloadHandler( 
-                             filename=paste0(getShortFileName(), ".xlsx"),
-                             content=function(file){
-                                     file.copy(getExcelfilename(), file)
-                             }   
-                     )
-             }
-             })
-     if(FALSE){
-             output$downloadPlot <- downloadHandler(
-                     filename=paste0(getShortFileName(), ".pdf"),
-                     content=function(file){
-                             file.copy(getPDFfilename(), file)
-                     }   
-             )
-             ### create the download link for the excel file
-             output$downloadResults <- downloadHandler( 
-                     filename=paste0(getShortFileName(), ".xlsx"),
-                     content=function(file){
-                             file.copy(getExcelfilename(), file)
-                     }   
-             )
-     }
+        }
+      }
+      ### as last resort when still no obvious matching, make user match vars to roles
+      if(prod(c(respMatch, specMatch))==0){
+        print("Names not defaults.  Assign Resp and Grp variable roles")
+        output$varSelects <- renderUI(DD.SSD)
+        print("SSD Var Selects Completed")
+        print("Set SSDdata = 1")
+      }
+      # once the varSelects is completed, finalDF should be created
+    }
+    if(input$doGrps){
+      grpMatch <- respMatch <- specMatch <- 0
+      if(all(c("species","responses","groups") %in% namesInFrame)){
+        print("Default vars found")
+        specMatch <- which(namesInFrame=="species")
+        respMatch <- which(namesInFrame=="responses")
+        grpMatch <- which(namesInFrame=="groups")
+        output$varSelects <- renderUI({
+          tagList(
+            selectInput(inputId="sort_x","Species:","species"),
+            selectInput(inputId="sort_y","Responses/NOECs:","responses"),
+            selectInput(inputId="sort_z","Grouping Var:","groups")
+          )
+        })
+        print(c(species=input$species,responses=input$responses,groups=input$groups))
+        #print("Set SSDdata = 1")
+        #rvs$SSDdata <- 1
+        #rvs$dataChecked <- 1
+      }
+      #if exact matches not found, try approximate -- hopefully this does not cause problems!
+      if(prod(c(grpMatch, respMatch, specMatch))==0){
+        grpMatch <- respMatch <- specMatch <- 0
+        namesLC <- tolower(namesInFrame)
+        ### in cases of multiple matches, first is taken, at least in part to avoid errors
+        if(any(regexpr("spec",namesLC)>0))specMatch<- which(regexpr("spec",namesLC)>0)[1]
+        if(any(regexpr("resp",namesLC)>0))respMatch<- which(regexpr("resp",namesLC)>0)[1]
+        if(any(regexpr("noec",namesLC)>0))respMatch<- which(regexpr("noec",namesLC)>0)[1]
+        if(any(regexpr("group",namesLC)>0))grpMatch<- which(regexpr("group",namesLC)>0)[1]
+        if(any(regexpr("grp",namesLC)>0))grpMatch<- which(regexpr("grp",namesLC)>0)[1]
+        if(any(regexpr("taxon",namesLC)>0))grpMatch<- which(regexpr("taxon",namesLC)>0)[1]
+        if(prod(c(grpMatch, respMatch, specMatch))>0){
+          output$varSelects <- renderUI({
+            tagList(
+              selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
+              selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch]),
+              selectInput(inputId="sort_z","Grouping:",namesInFrame[grpMatch])
+            )
+          })
+        }
+      }
+      ### as last resort if still matches, make user match vars to roles
+      if(prod(c(grpMatch, respMatch, specMatch))==0){
+        print("Names not defaults.  Assign variable roles")
+        output$varSelects <- renderUI(DD.SSD3)
+        print("SSD Var Selects Completed")
+      }
+    }
 
-        ### the example data that are displayed with instructions for the tool
-     output$sampleData <- renderTable({ 
-          data.frame(y=c(120.9,118,134,121.2,118.6,120.4,82.6,62.8,
-                         81.6,49.3,41.6,41.3,12.7,14.7,14.7,4.93,4,4.4),
-                doses=c(0,0,0,5,5,5,10,10,10,20,20,20,40,40,40,80,80,80))
-     }, include.rownames=FALSE)
+    req(!is.null(rvs$finalDF))
+    print("FinalDF is found, set reactives for SSD")
+    if(all(c("species","responses") %in% names(rvs$finalDF))){
+      rvs$SSDdata <- 1
+      rvs$dataChecked <- 1
+    }
+  })
+  if(FALSE){
+    observe({
+      print("In list(rvs$dataImported == 1,input$analysisType)")
+      req(rvs$dataImported == 1 & rvs$dataChecked == 0 & is.null(rvs$finalDF))
+      # First, populate the default variable helper on the page
+
+      #shiny::req(getData())
+      testData <- rvs$inputDF
+      #req({rvs$dataImported == 1})
+      namesInFrame <- names(testData)
+
+      ### These "DD" functions are based on some I found
+      ### for drag/drop selections (link?).  There are several
+      ### here, one for each data type.  Hopefully this is not
+      ### so cutting edge that it breaks in future...
+      ### Naming convention here is for 3 numeric variable,
+      ### 2 numeric, and one (SSD)
+      source("ComboDragDrops.R",local = TRUE)
+      print("build variable selections interface")
+      print(input$analysisType)
+      # The drag and drop variable selections are only used if the
+      # default names cannot be found.  If they are found, then
+      # the selection boxes don't really do anything but show the defaults
+      if(input$analysisType=="Count" |
+         input$analysisType=="SK" |
+         input$analysisType=="BMD"){
+        if(all(c("doses","sizes","responses") %in% namesInFrame)){
+          output$varSelects <- renderUI({
+            tagList(
+              selectInput(inputId="doses","Exposure Conc:","doses"),
+              selectInput(inputId="responses","Response Counts:","responses"),
+              selectInput(inputId="sizes","Group Sizes:","sizes"),
+            )
+          })
+        }
+        if(!all(c("doses","sizes","responses") %in% namesInFrame)){
+          output$varSelects <- renderUI(DD.3)
+        }
+        output$varLabels <- renderUI({
+          tagList(
+            textInput("xLab",label="Exposure label (add units inside ())",value="Exposure Concentration ()"),
+            textInput("yLab",label="Response label",value="Mortality Rate")
+          )
+        })
+      }
+
+      if(input$analysisType=="Continuous"){
+        if(all(c("doses","responses") %in% namesInFrame)){
+          output$varSelects <- renderUI({
+            tagList(
+              selectInput(inputId="doses","Exposure Conc:","doses"),
+              selectInput(inputId="responses","Responses:","responses")
+            )
+          })
+        }
+        if(!all(c("doses","responses") %in% namesInFrame)){
+          print("Assign variable roles")
+          output$varSelects <- renderUI(DD.2)
+          #req(input$sort_x,input$sort_y)
+          print(c(sort_x=input$sort_x,sort_y=input$sort_y))
+          print("Completed")
+        }
+        output$varLabels <- renderUI({
+          tagList(
+            textInput("xLab",label="Exposure label (add units inside ())",value="Exposure Concentration ()"),
+            textInput("yLab",label="Response label",value="Response")
+          )
+        })
+      }
+
+      if(input$analysisType=="SSD" & !input$doGrps){
+        if(all(c("species","responses") %in% namesInFrame)){
+          print("Default vars found")
+          output$varSelects <- renderUI({
+            tagList(
+              selectInput(inputId="sort_x","Species:","species"),
+              selectInput(inputId="sort_y","Responses/NOECs:","responses")
+            )
+          })
+          print(c(species=input$species,responses=input$responses))
+          #print("Set SSDdata = 1")
+          #rvs$SSDdata <- 1
+          #rvs$dataChecked <- 1
+        }
+        else{
+          print("Names not defaults.  Assign variable roles")
+          output$varSelects <- renderUI(DD.SSD)
+          print("SSD Var Selects Completed")
+          print("Set SSDdata = 1")
+        }
+        # once the varSelects is completed, finalDF should be created
+        req(!is.null(rvs$finalDF))
+        print("FinalDF is found, set reactives for SSD")
+        if(all(c("species","responses") %in% names(rvs$finalDF))){
+          rvs$SSDdata <- 1
+          rvs$dataChecked <- 1
+        }
+      }
+
+      if(input$analysisType=="SSD" & input$doGrps){
+        if(all(c("species","responses","groups") %in% namesInFrame)){
+          print("Default vars found")
+          output$varSelects <- renderUI({
+            tagList(
+              selectInput(inputId="sort_x","Species:","species"),
+              selectInput(inputId="sort_y","Responses/NOECs:","responses"),
+              selectInput(inputId="sort_z","Grouping Var:","groups")
+            )
+          })
+          print(c(species=input$species,responses=input$responses,groups=input$groups))
+          #print("Set SSDdata = 1")
+          #rvs$SSDdata <- 1
+          #rvs$dataChecked <- 1
+        }
+        else{
+          print("Names not defaults.  Assign variable roles")
+          output$varSelects <- renderUI(DD.SSD3)
+          print("SSD Var Selects Completed")
+          print("Set SSDdata = 1")
+        }
+        # once the varSelects is completed, finalDF should be created
+        req(!is.null(rvs$finalDF))
+        print("FinalDF is found, set reactives for SSD")
+        if(all(c("species","responses","groups") %in% names(rvs$finalDF))){
+          rvs$SSDdata <- 1
+          rvs$dataChecked <- 1
+        }
+      }
+    })
+  }
+
+  # For SSD analysis, set default names on data
+  observe({
+    print("After SSD var selections made, adjust names/checks.")
+    req(input$analysisType=="SSD")
+    req(rvs$dataImported == 1 & rvs$dataChecked == 0)
+    if(!input$doGrps){
+      print(c(species=input$sort_x,responses=input$sort_y))
+      # this forces wait until both vars are selected
+      print("SSD check 2")
+      testData <- rvs$inputDF
+      namesInFrame <- names(testData)
+      if(!all(c("species","responses") %in% namesInFrame)){
+        #Check that each selection is made
+        print("Match check")
+        req(input$sort_x)
+        req(input$sort_y)
+        req({input$sort_x != input$sort_y})
+        print(c(Spec.var=input$sort_x,NOEC.var=input$sort_y))
+        print("Both matches made")
+        oldNames <- c(input$sort_x,input$sort_y)
+        print(oldNames)
+        testData <- testData[,oldNames]
+        names(testData) <- c("species","responses")
+      }
+      print(testData)
+      print("ready to do formattable() on testData")
+      print(head(testData))
+      ### once we get here, we can assume that the data have been correctly identified
+      outputDT.1 <- as.datatable(formattable(testData[,c("species","responses")],
+                                             #align =c("r","l"),
+                                             list(
+                                               species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
+                                               responses = formatter("span", style = ~ style(color="green", float="right")))),
+                                 class = 'stripe compact',
+                                 #escape = FALSE,
+                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                   #autoWidth = TRUE,
+                                   pageLength = 10, info = FALSE,
+                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                   scrollX = TRUE, scrollY = FALSE,
+                                   paging = TRUE, ordering = FALSE,
+                                   searching = FALSE))
+      #%>%
+      #  DT::formatRound(columns = 2,digits = roundTo)
+      #if(FALSE)outputDT <- DT::datatable(outputDT,
+      #                          class = 'row-border stripe hover compact nowrap',
+      #                          rownames = FALSE,
+      #                          autoHideNavigation = TRUE, escape =FALSE) %>%
+      #formatStyle(columns = "Species",
+      #            target="cell",
+      #            fontWeight = styleEqual(1:nrow(outputData), rep("bold",nrow(outputData)))) %>%
+      #DT::formatRound(columns = 2,digits = roundTo)
+      #output$DTtableRaw <- DT::renderDT(rvs$inputDF)
+      output$DTtable <- DT::renderDT(outputDT.1)
+
+      #output$table <- renderTable(testData)
+
+      # Then, do a couple of checks
+      if(length(unique(testData$species))<nrow(testData))alerID <- shinyalert(
+        title = "Warning",
+        text = "Species labels not all unique.\nCheck if unexpected.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      if(!is.numeric(testData$responses))alerID <- shinyalert(
+        title = "Warning",
+        text = "Response variable not numeric.\nCheck input!!",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      rvs$dataChecked <- 1
+      #And at this point, blank out other sections of the inputs interface
+      #these should only appear once data has been set up.
+      output$scaleSelect <- NULL
+      output$varLabels <- NULL
+      output$downloadExcel <- NULL
+      output$downloadPDF <- NULL
+      output$Excelbutton <- NULL
+      output$PDFbutton <- NULL
+      output$setupButton <- NULL
+      output$SSD.1.1 <- NULL
+      output$SSD.1.2 <- NULL
+      output$SSD.1.3 <- NULL
+      #output$SSD.2.1 <- NULL
+      #output$SSD.2.2 <- NULL
+      #output$SSDoptshead <- NULL
+      output$SSDconditional2 <- NULL
+    }
+
+
+    if(input$doGrps){
+      print(c(species=input$sort_x,responses=input$sort_y,groups=input$sort_z))
+      # this forces wait until both vars are selected
+      print("SSD check 2")
+      testData <- rvs$inputDF
+      namesInFrame <- names(testData)
+      if(!all(c("species","responses","groups") %in% namesInFrame)){
+        #Check that each selection is made
+        print("Match check")
+        req(input$sort_x)
+        req(input$sort_y)
+        req(input$sort_z)
+        print(c(Spec.var=input$sort_x,NOEC.var=input$sort_y,Group.var=input$sort_z))
+        print("All 3 matches made")
+        oldNames <- c(input$sort_x,input$sort_y,input$sort_z)
+        print(oldNames)
+        testData <- testData[,oldNames]
+        names(testData) <- c("species","responses","groups")
+      }
+      print("ready to do formattable() on testData")
+      print(head(testData))
+      ### once we get here, we can assume that the data have been correctly identified
+      outputDT.1 <- as.datatable(formattable(testData[,c("species","responses","groups")],
+                                             #align =c("r","l"),
+                                             list(
+                                               species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
+                                               responses = formatter("span", style = ~ style(color="green", float="right")),
+                                               groups=formatter("span", style = ~ style(color = "blue")))),
+                                 class = 'stripe compact',
+                                 #escape = FALSE,
+                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                   #autoWidth = TRUE,
+                                   pageLength = 10, info = FALSE,
+                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                   scrollX = TRUE, scrollY = FALSE,
+                                   paging = TRUE, ordering = FALSE,
+                                   searching = FALSE))
+      #%>%
+      #  DT::formatRound(columns = 2,digits = roundTo)
+      #if(FALSE)outputDT <- DT::datatable(outputDT,
+      #                          class = 'row-border stripe hover compact nowrap',
+      #                          rownames = FALSE,
+      #                          autoHideNavigation = TRUE, escape =FALSE) %>%
+      #formatStyle(columns = "Species",
+      #            target="cell",
+      #            fontWeight = styleEqual(1:nrow(outputData), rep("bold",nrow(outputData)))) %>%
+      #DT::formatRound(columns = 2,digits = roundTo)
+      #output$DTtableRaw <- DT::renderDT(rvs$inputDF)
+      output$DTtable <- DT::renderDT(outputDT.1)
+
+      #output$table <- renderTable(testData)
+
+      # Then, do a couple of checks
+      if(length(unique(testData$species))<nrow(testData))alerID <- shinyalert(
+        title = "Warning",
+        text = "Species labels not all unique.\nCheck if unexpected.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      if(!is.numeric(testData$responses))alerID <- shinyalert(
+        title = "Warning",
+        text = "Response variable not numeric.\nCheck input!!",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      rvs$dataChecked <- 1
+      #And at this point, blank out other sections of the inputs interface
+      #these should only appear once data has been set up.
+      output$scaleSelect <- NULL
+      output$varLabels <- NULL
+      output$downloadExcel <- NULL
+      output$downloadPDF <- NULL
+      output$Excelbutton <- NULL
+      output$PDFbutton <- NULL
+      output$setupButton <- NULL
+      output$SSD.1.1 <- NULL
+      output$SSD.1.2 <- NULL
+      output$SSD.1.3 <- NULL
+      #output$SSD.2.1 <- NULL
+      #output$SSD.2.2 <- NULL
+      #output$SSDoptshead <- NULL
+      output$SSDconditional2 <- NULL
+    }
+    ### as others are added, these will be populated like SSD
+
+    #calculate the nonparametric quantiles of the data for all plotting
+    xVals <- quantile(log10(testData$responses),probs = seq(0.0001,0.9999,length=10000),type=8)
+    yVals <- seq(0.0001,0.9999,length=10000)
+    pointIDs <- sapply(log10(testData$responses),FUN = function(x)which.min(abs(x-xVals)))
+    pointIDs[1] <- max(which(xVals==xVals[1]))
+    testData$yVals <- yVals[pointIDs]
+    rvs$finalDF <- testData
+
+
+    if(input$analysisType!="SSD"){
+      output$scaleSelect <- NULL
+      output$varLabels <- NULL
+      output$downloadExcel <- NULL
+      output$downloadPDF <- NULL
+      output$Excelbutton <- NULL
+      output$PDFbutton <- NULL
+      output$setupButton <- NULL
+      output$SSD.1.1 <- NULL
+      output$SSD.1.2 <- NULL
+      output$SSD.1.3 <- NULL
+      #output$SSD.2.1 <- NULL
+      #output$SSD.2.2 <- NULL
+      #output$SSDoptshead <- NULL
+      output$SSDconditional2 <- NULL
+    }
+    output$runButton <- NULL
+
+  })
+
+
+
+  observe({
+    print("After SSD var selections made, adjust names/checks.")
+
+    req(rvs$dataImported == 1 & rvs$dataChecked == 1 & !is.null(rvs$finalDF))
+    if(input$analysisType=="SSD"){
+      output$varLabels <- renderUI({
+        tagList(
+          textInput("xLab",label="Effect Measure (eg, 'NOEC value')",value="NOEC"),
+          textInput("units",label="Units (eg, 'mg/L')",value="mg/L")
+        )
+      })
+      output$downloadExcel <- downloadHandler(
+        filename = "SSD Analysis.xlsx",
+        content = function(file){
+          file.copy("SSDoutput.xlsx", file)
+        }
+      )
+
+      output$downloadPDF <- downloadHandler(
+        filename = "SSD Analysis.pdf",
+        content = function(file){
+          file.copy("SSDplotOutput.pdf", file)
+        }
+      )
+
+      output$Excelbutton <- renderUI({
+        req(rvs$setupComplete == 1)
+        req(rvs$SSD.complete == 1)
+        #if (input$SSD.complete==0)return(actionButton("dummyButton","DUMMY"))
+        if (rvs$SSD.complete==1)return(downloadBttn('downloadExcel', 'Excel Results',"fill"))
+      })
+
+      output$PDFbutton <- renderUI({
+        req(rvs$setupComplete == 1)
+        req(rvs$SSD.complete == 1)
+        if (rvs$SSD.complete==1)return(downloadBttn('downloadPDF', 'PDF Results',"fill"))
+      })
+
+      output$setupButton <- renderUI({
+        req(rvs$dataChecked==1)
+        shinyWidgets::actionBttn(
+          inputId="previewData",
+          label = "Inputs",
+          icon = icon("check"),
+          style = "pill",
+          color = "danger",
+          size = "md",
+          block = FALSE,
+          no_outline = TRUE
+        )
+      })
+
+      output$SSD.1.1 <- renderUI({
+        sliderInput("speciesMargin", "Sp Margin", min = 0, max = 0.5, value = 0.3,step = 0.05)
+      })
+      output$SSD.1.2 <- renderUI({
+        sliderInput("speciesSize", "Sp Size", min = 0, max = 2, value = 1,step = 0.05)
+      })
+      output$SSD.1.3 <- renderUI({
+        sliderInput("hcxSize", "HCp Size", min = 0.5, max = 2, value = 1,step = 0.05)
+      })
+
+
+    }
+
+
+    output$scaleSelect <- renderUI({
+      radioButtons("doseScale",label = "Exposure Scale",choices = c("Measured","Log"),inline = TRUE,selected = "Log")
+    })
+
+    output$runButton <- renderUI({
+      req(rvs$setupComplete == 1)
+      shinyWidgets::actionBttn(
+        inputId="runAnalysis",
+        label = "Run Analysis",
+        icon = icon("rocket"),
+        style = "pill",
+        color = "success",
+        size = "md",
+        block = FALSE,
+        no_outline = TRUE
+      )
+      #actionButton("runAnalysis", "Run Analysis",class = "btn-primary btn-lg",icon = icon("circle-empty-play",lib = "glyphicon"))
+    })
+
+  })
+  # This section responds to the selection of input analysisType.
+  # It puts the proper template into a new slot of input, called "Selected"
+  # It also puts header strings into DF that are used in the datatable view
+
+  observeEvent(input$previewData,{
+    print("Preview Data has been clicked")
+    req(rvs$finalDF)
+
+    testData <- rvs$finalDF
+    previewFile <- tempfile(fileext = ".png",tmpdir = "www")
+    namesInFrame <- names(testData)
+
+    # Do additional processing required for plotting data
+    if(input$analysisType=="Count" |
+       input$analysisType=="SK" |
+       input$analysisType=="BMD"){
+      #print("check1")
+      #print(testData)
+      print(namesInFrame)
+      print(names(testData))
+      if(!all(namesInFrame %in% c("doses","responses","sizes"))){
+        print("assign std names")
+        req(input$sort_x,input$sort_y,input$sort_z)
+        oldNames <- c(input$sort_x,input$sort_y,input$sort_z)
+        print(oldNames)
+        testData <- testData[,oldNames]
+        names(testData) <- c("doses","responses","sizes")
+      }
+      #print(str(testData))
+      testData$logDose <- log10(testData$doses)
+      doseSpacing <- median(diff(testData$logDose[testData$doses>0]),na.rm = TRUE)
+      testData$logDose[testData$doses==0] <- min(testData$logDose[testData$doses>0],na.rm = TRUE)-1.5*doseSpacing
+      testData$yVals <- with(testData,responses/sizes)
+    }
+
+    if(input$analysisType=="Continuous"){
+      #print("check1")
+      #print(testData)
+      print(namesInFrame)
+      print(names(testData))
+      if(!all(namesInFrame %in% c("doses","responses"))){
+        print("assign std names")
+        req(input$sort_x,input$sort_y)
+        oldNames <- c(input$sort_x,input$sort_y)
+        print(oldNames)
+        testData <- testData[,oldNames]
+        names(testData) <- c("doses","responses")
+      }
+      #print(str(testData))
+      testData$logDose <- log10(testData$doses)
+      doseSpacing <- median(diff(unique(testData$logDose[testData$doses>0])),na.rm = TRUE)
+      testData$logDose[testData$doses==0] <- min(testData$logDose[testData$doses>0],na.rm = TRUE)-1.5*doseSpacing
+      testData$yVals <- with(testData,responses)
+    }
+
+
+    ### Now, do the plots
+    # Here, for those with (x,y)-type variable analyses (other than SSD)
+    if(isolate(input$analysisType)=="Count" |
+       isolate(input$analysisType)=="Continuous" |
+       input$analysisType=="SK" |
+       input$analysisType=="BMD"){
+      #remove yVals and logDose columns
+      outputTable <- testData[,-(c(-1,0)+ncol(testData))]
+      if(!(isolate(input$analysisType)=="Continuous"))
+        names(outputTable) <- c("Exposure Concentration","Response Count","Group Size")
+      if( (isolate(input$analysisType)=="Continuous"))
+        names(outputTable) <- c("Exposure Concentration","Response")
+      output$table <- renderTable(outputTable)
+      print(str(testData))
+      nrow1 <- nrow(testData)
+      testData <- na.omit(testData)
+      nrow2 <- nrow(testData)
+      print(str(testData))
+      if(nrow1!=nrow2){
+        alerID <- shinyalert(
+          title = "Warning",
+          text = "One or more rows of data were eliminated for missing values.\nCheck if unexpected.",
+          closeOnEsc = TRUE,
+          closeOnClickOutside = FALSE,
+          html = FALSE,
+          type = "success",
+          showConfirmButton = TRUE,
+          showCancelButton = FALSE,
+          confirmButtonText = "OK",
+          confirmButtonCol = "#AEDEF4",
+          timer = 0,
+          imageUrl = "",
+          animation = TRUE
+        )
+      }
+      output$basePlot <- renderPlot({
+        par(mar=c(5, 7, 0, 0.5) + 0.1)
+        if(input$analysisType=="Continuous")yRangeVals <- range(testData$yVals,na.rm = TRUE)
+        if(input$analysisType!="Continuous")yRangeVals <- c(0,1)
+        if(input$doseScale=="Measured"){
+          print("Measured scale, plotSetupGeneric")
+          print(testData)
+          print(yRangeVals)
+          plotSetupGeneric(inputDF=testData,
+                           yRange=yRangeVals,
+                           cexLAB=input$labelSize,
+                           cexAXIS=input$axisSize,
+                           cexLWD=input$lineSize,
+                           logscaleTF=FALSE,
+                           xlabSTR=input$xLab,ylabSTR=input$yLab)
+          if(input$analysisType=="Count" |
+             input$analysisType=="SK" |
+             input$analysisType=="BMD"){
+            with(testData,{
+              monoY <- isotone::gpava(z=doses,y=yVals,weights=sizes)$x
+              points(x=doses,y=monoY,pch=16,col="red")
+              monoSpline <- spline(x=doses,y=monoY,method = "hyman",xout = seq(min(doses),max(doses),length=1000))
+              lines(monoSpline,col="red")
+              abline(h=min(monoSpline$y)+input$ECXvalue*(1-min(monoSpline$y)),lty=3)
+            })
+          }
+        }
+        if(input$doseScale=="Log"){
+          plotSetupGeneric(inputDF=testData,
+                           yRange=yRangeVals,
+                           cexLAB=input$labelSize,
+                           cexAXIS=input$axisSize,
+                           cexLWD=input$lineSize,
+                           logscaleTF=TRUE,
+                           xlabSTR=input$xLab,ylabSTR=input$yLab)
+          if(input$analysisType=="Count" |
+             input$analysisType=="SK" |
+             input$analysisType=="BMD"){
+            with(testData,{
+              monoY <- isotone::gpava(z=logDose,y=yVals,weights=sizes)$x
+              points(x=10^logDose,y=monoY,pch=16,col="red")
+              monoSpline <- spline(x=logDose,y=monoY,method = "hyman",xout = seq(min(logDose),max(logDose),length=1000))
+              lines(x=10^(monoSpline$x),y=monoSpline$y,col="red")
+              abline(h=min(monoSpline$y)+input$ECXvalue*(1-min(monoSpline$y)),lty=3)
+            })
+          }
+        }
+      })
+    }
+
+    # And separately for SSD
+    if(input$analysisType=="SSD"){
+      #when preview is clicked, reset compete flag
+      #helps with multiple runs?
+      rvs$SSD.complete <- 0
+      print("SSD plotting")
+      #print(testData)
+      if(!all(namesInFrame %in% c("species","responses")) & FALSE){
+        print("assign std names")
+        req(input$sort_x,input$sort_y)
+        oldNames <- c(input$sort_x,input$sort_y)
+        print(oldNames)
+        testData <- testData[,oldNames]
+        names(testData) <- c("species","responses")
+      }
+      #req(input$doGrays)
+      if(input$doGrays){
+        lineColors <<- c(rgb(0,0,0),rgb(2/3,2/3,2/3),rgb(1/3,1/3,1/3))
+        if(input$doGrps){
+          seqVals <- seq(.1,.75,length=length(unique(testData$groups)))
+          colorList <<- rgb(seqVals,seqVals,seqVals)
+          pchSolids <<- c(rep(15:17,length=length(unique(testData$groups))),18)
+          pchOpens <<- c(rep(0:2,length=length(unique(testData$groups))),5)
+          #add black on the end
+          colorList <<- c(colorList,rgb(0,0,0))
+        }
+        if(!input$doGrps){
+          colorList <<- c(rgb(0.5,0.5,0.5),rgb(0,0,0))
+          pchSolids <<- c(16,18)
+          pchOpens <<- c(1,5)
+        }
+      }
+      if(!input$doGrays){
+        lineColors <<- c("blue","cyan")
+        if(input$doGrps){
+          colorList <<- c(RColorBrewer::brewer.pal(name = "Set1",n=length(unique(testData$groups))),rgb(0,0,0))
+          pchSolids <<- c(rep(16,length(unique(testData$groups))),18)
+          pchOpens <<- c(rep(1,length(unique(testData$groups))),5)
+        }
+        if(!input$doGrps){
+          colorList <<- c("gray","black")
+          pchSolids <<- c(16,18)
+          pchOpens <<- c(1,5)
+        }
+      }
+      if(!input$doGrps){
+        outputData <- testData[,c("species","responses")]
+        names(outputData) <- c("Species","Response")
+        print("USE DT TO FORMAT")
+        #output$DTtable <- renderDT(outputData)
+        roundTo <- floor(log10(min(outputData$Response)))-1
+        roundTo <- ifelse(roundTo < 0,abs(roundTo),roundTo)
+        outputData$Response <- round(outputData$Response,digits = roundTo)
+        #options below turn off the search field ,options = list(dom = 't'))
+        #but, that also disables scroll so not using now.
+        outputDT <- as.datatable(formattable(outputData,
+                                             #align =c("r","l"),
+                                             list(
+                                               Species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
+                                               Response = formatter("span", style = ~ style(color="green", float="right")))),
+                                 class = 'stripe compact',
+                                 #escape = FALSE,
+                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                   #autoWidth = TRUE,
+                                   pageLength = 10, info = FALSE,
+                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                   scrollX = TRUE, scrollY = FALSE,
+                                   paging = TRUE, ordering = FALSE,
+                                   searching = FALSE))
+      }
+      if( input$doGrps){
+        outputData <- testData[,c("species","responses","groups")]
+        names(outputData) <- c("Species","Response","Group")
+        print("USE DT TO FORMAT")
+        #output$DTtable <- renderDT(outputData)
+        roundTo <- floor(log10(min(outputData$Response)))-1
+        roundTo <- ifelse(roundTo < 0,abs(roundTo),roundTo)
+        outputData$Response <- round(outputData$Response,digits = roundTo)
+        #options below turn off the search field ,options = list(dom = 't'))
+        #but, that also disables scroll so not using now.
+        outputDT <- as.datatable(formattable(outputData,
+                                             #align =c("r","l"),
+                                             list(
+                                               Species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
+                                               Response = formatter("span", style = ~ style(color="green", float="right")),
+                                               Group=formatter("span", style = ~ style(color = colorList[match(outputData$Group,unique(outputData$Group))])))),
+                                 class = 'stripe compact',
+                                 #escape = FALSE,
+                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                   #autoWidth = TRUE,
+                                   pageLength = 10, info = FALSE,
+                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                   scrollX = TRUE, scrollY = FALSE,
+                                   paging = TRUE, ordering = FALSE,
+                                   searching = FALSE))
+      }
+      #%>%
+      #  DT::formatRound(columns = 2,digits = roundTo)
+      #if(FALSE)outputDT <- DT::datatable(outputDT,
+      #                          class = 'row-border stripe hover compact nowrap',
+      #                          rownames = FALSE,
+      #                          autoHideNavigation = TRUE, escape =FALSE) %>%
+      #formatStyle(columns = "Species",
+      #            target="cell",
+      #            fontWeight = styleEqual(1:nrow(outputData), rep("bold",nrow(outputData)))) %>%
+      #DT::formatRound(columns = 2,digits = roundTo)
+      output$DTtable <- DT::renderDT(outputDT)
+
+      #this is same as earlier, but change rows to 5 instead of 10 after preview is clicked
+      outputDT.Raw <- as.datatable(formattable(rvs$inputDF),
+                                   #class = 'row-border stripe hover compact nowrap',
+                                   class = 'stripe compact',
+                                   #escape = FALSE,
+                                   options = list(columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                                  #autoWidth = TRUE,
+                                                  pageLength = 5, info = FALSE,
+                                                  lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                                  scrollX = TRUE, scrollY = FALSE,
+                                                  paging = TRUE, ordering = FALSE,
+                                                  searching = FALSE))
+      #options=list(autoWidth = TRUE,scrollX = FALSE,scrollY = FALSE,searching = FALSE))
+      output$DTtableRaw <- DT::renderDT(outputDT.Raw)
+
+      #output$DTtableRaw <- DT::renderDT(rvs$inputDF)
+      #datatable(outputData) %>% formatStyle("Species","font-style: italic")
+      nrow1 <- nrow(testData)
+      testData <- na.omit(testData)
+      nrow2 <- nrow(testData)
+      if(nrow1!=nrow2){
+        alerID <- shinyalert(
+          title = "Warning",
+          text = "One or more rows of data were eliminated for missing values.\nCheck if unexpected.",
+          closeOnEsc = TRUE,
+          closeOnClickOutside = FALSE,
+          html = FALSE,
+          type = "success",
+          showConfirmButton = TRUE,
+          showCancelButton = FALSE,
+          confirmButtonText = "OK",
+          confirmButtonCol = "#AEDEF4",
+          timer = 0,
+          imageUrl = "",
+          animation = TRUE
+        )
+      }
+      png(filename = previewFile,width = input$figW,height = input$figH,units = "in",res = 100)
+      print("Margins")
+      print(c(input$figH*.15, input$figW*.15, 0, input$figW*input$speciesMargin)+0.1)
+      par(mai=c(input$figH*.15, input$figW*.15, 0, input$figW*input$speciesMargin)+0.1,
+          omi=rep(0,4))
+
+      inputList <- input
+      input2plot <- testData
+      input2plot$doses <- testData$responses
+      input2plot$logDose <- log10(input2plot$doses)
+      newLims <- 10^(log10(range(input2plot$responses,na.rm = TRUE))-c(0.1,0)*diff(log10(range(input2plot$responses,na.rm = TRUE))))
+      useFIT <- FALSE
+      xlimsFORCE <- newLims
+      yMaxFORCE <- NULL
+      speciesTF <- TRUE # setting this to TRUE effectively is to allow default plotting setup.
+      # when FALSE species will NOT be plotted not matter other settings.
+      source("SSDplotCodeCDF.R",local = TRUE)
+      data4legend <- testData
+      xLegend <- 10^quantile(log10(data4legend$responses),prob=input$ECXvalue.SSD,type=8)
+      if(input$doLegend & input$doGrps)source("addLegend.R",local = TRUE)
+      box(which = "figure")
+      dev.off()
+      output$basePlot <- renderImage({list(src=previewFile,alt="Preview Figure")},deleteFile = TRUE)
+    }
+
+    ### Now, data is ready to go, so set reactive variables
+    rvs$setupComplete <- 1
+    rvs$indata <- testData
+  })
+
+  ### https://community.rstudio.com/t/updating-input-variable-not-triggering-observeevent-if-new-value-is-the-same/57120
+  ### https://stackoverflow.com/questions/46732849/shiny-detect-a-change-in-input-with-a-warning-in-ui-r
+  ### Not understanding why if input selections are changed, this does not reset setupComplete so the preview needs to be done
+  ### again.
+
+  #what to do here?  Reset things if something changes that would change numerical results?
+  #or also any graphics.  Graphics changes can still be seen by clicking the check inputs
+  observeEvent({list(
+    input$pasteData,
+    #input$figH,
+    #input$figW,
+    #input$axisSize,
+    #input$labelSize,
+    #input$lineSize,
+    #input$speciesMargin,
+    #input$speciesSize,
+    #input$hcxSize,
+    #input$doLOO,
+    #input$doAOI,
+    #input$xLab,
+    #input$units,
+    input$ECXvalue.SSD)},
+    {
+      req(rvs$dataChecked ==1)
+      print("Input changes detected")
+      print("Input changes detected")
+      print("Input changes detected")
+      print("Input changes detected")
+      print(c(rvs.setupComplete.pre=rvs$setupComplete))
+      rvs$setupComplete <- 0
+      print(c(rvs.setupComplete.post=rvs$setupComplete))
+    }
+  )
+
+  # Reset the "readiness" for analysis when inputs are changed
+  observeEvent(input$runAnalysis, {
+    #if (!is.null(rvs())) write.csv(rvs(), input$select2, row.names = FALSE)
+    req({rvs$setupComplete == 1})
+    print("Run button clicked")
+    print(c(rvs.setupComplete=rvs$setupComplete))
+    if(rvs$setupComplete == 0){
+      print("You must preview your data first")
+      alerID <- shinyalert(
+        title = "Error",
+        text = "You must preview your data first to confirm it is ready for analysis.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+    }
+    req(rvs$setupComplete == 1)
+    #clean up old results files if they exist
+
+    testData <- na.omit(rvs$indata)
+    BMRinput <- input$ECXvalue
+    gZeroInput <- TRUE
+    #save(list=c("testData","BMRinput","gZeroInput"),file = "testData.RData")
+    if(isolate(input$analysisType)=="BMD"){
+      output$markdown <- renderUI({
+        HTML(markdown::markdownToHTML(knit('BMD-shiny.Rmd', quiet = FALSE)))
+      })
+    }
+    if(isolate(input$analysisType)=="SSD"){
+      #set a flag that will switch to 1 when
+      #SSD analysis is complete
+      Nsteps <- 2
+      stepProgress <- 0
+      if(input$doGrps) Nsteps <- Nsteps + 1
+      if(input$doLOO) Nsteps <- Nsteps + 4
+      if(input$doAOI) Nsteps <- Nsteps + 3
+      withProgress(message = 'Calculating:',
+                   detail = 'This may take a while...', value = 0,max=1,
+                   expr = {source("SSD.run.code.R",local = TRUE)})
+
+    }
+  })
 })
