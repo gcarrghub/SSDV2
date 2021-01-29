@@ -140,7 +140,7 @@ shinyServer(function(input, output, session){
         checkboxInput(inputId = "doGrps",label = "Grouping",value = FALSE)
       })
       output$SSD.2.4 <- renderUI({
-        checkboxInput(inputId = "doGrays",label = "Grayscale",value = FALSE)
+        checkboxInput(inputId = "doGrays",label = "Grayscale",value = TRUE)
       })
       output$SSD.2.5 <- renderUI({
         checkboxInput(inputId = "doLegend",label = "Legend on plots",value = FALSE)
@@ -807,7 +807,10 @@ shinyServer(function(input, output, session){
 
 
     output$scaleSelect <- renderUI({
-      radioButtons("doseScale",label = "Exposure Scale",choices = c("Measured","Log"),inline = TRUE,selected = "Log")
+            #radioButtons("doseScale",label = "Exposure Scale",
+            #       choices = c("Measured","Log"),inline = TRUE,selected = "Log")
+            radioButtons("doseScale",label = "Analysis Scale",
+                         choices = c("Log"),inline = TRUE,selected = "Log")
     })
 
     output$runButton <- renderUI({
