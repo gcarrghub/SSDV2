@@ -49,6 +49,11 @@ if(FALSE){
 ### this should work in Rstudio, the Rgui, or even a terminal window on mac
 library(shiny)
 runGitHub("SSDV2", "gcarrghub",launch.browser=TRUE,ref="main")
+###   ref="main" is important.  GitHub changed their naming conventions where
+###   originally the root archive location was called "master" then changed
+###   to "main".  runGitHub currently defaults to "master" so my old tools
+###   don't have the ref= argument.  In future, they should probably make it
+###   required.  The errors are not intuitive.
 
 if(FALSE){
   ### If Firefox or Chrome are not default browser, open tool with
