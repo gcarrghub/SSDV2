@@ -4,8 +4,7 @@
 
 #these are objects that get written to the global environment
 cleanUp <- function(){
-  globalVars <- c("bestParsEC50","bestParsECx","bestParsLL","BVdata","fBasedCritVal","goodFlag",
-                  "lowerCI","optimxMethods","packages","packageTests","upperCI","varFixed","verbose")
+  globalVars <- c("colorList","lineColors","pchOpens","pchSolids")
   invisible(sapply(globalVars,FUN = function(objname)if(exists(objname,envir = .GlobalEnv))rm(list=objname,envir = .GlobalEnv)))
 }
 if(FALSE)cleanUp()
@@ -15,41 +14,7 @@ if(FALSE)cleanUp()
 #### Details given in if(FALSE){} blocks are details details
 #### Before running the tool need to check for required packages and install if necessary
 #### Typically should only need to do this once per installation of R
-packages = c("shiny", "openxlsx", "optimx", "plotrix","devtools","ADGofTest","parallel",
-             "reshape2","dplyr","pdftools")
-packageTests <- sapply(packages,FUN = require,character.only=TRUE)
-if(all(packageTests)){
-  cat("\n",paste(rep("#",100),collapse = ""),
-      "\n  All required packages are present.",
-      "\n",paste(rep("#",100),collapse = ""),"\n")
-}
-if(sum(!packageTests)>0){
-  cat("\n",paste(rep("#",100),collapse = ""),
-      "\n  Please wait while these required packages and their dependencies are installed:",
-      "\n   ",paste(names(packageTests[!packageTests]),collapse = " "),
-      "\n  Requires internet access and sufficient rights to install R packages on your system.",
-      "\n",paste(rep("#",100),collapse = ""),"\n")
-  install.packages(packages[!packageTests], repos = "https://cran.rstudio.com/", dependencies=TRUE)
-  ### In one case, needed to add this to a users install.packages call:  INSTALL_opts = c('--no-lock')
-  # recheck for packages
-  packageTests <- sapply(packages,FUN = require,character.only=TRUE)
-  if(all(packageTests)){
-    cat("\n",paste(rep("#",100),collapse = ""),
-        "\n  All required packages were successfully installed.",
-        "\n",paste(rep("#",100),collapse = ""),"\n")
-  }
-  if(!all(packageTests)){
-    cat("\n",paste(rep("#",100),collapse = ""),
-        "\n  Not all packages were successfully installed:",
-        "\n   ",paste(names(packageTests[!packageTests]),collapse = " "),
-        "\n",paste(rep("#",100),collapse = ""),"\n")
-  }
-}
 
-source("genericPLL.R")
-source("addOne.genericPLL.R")
-source("addOnePLL.V3.R")
-source("rriskFitdist.GJC.R")
 
 if(FALSE){
   #can use this command to download a copy of the data -- only works inside of rstudio
@@ -83,8 +48,12 @@ if(FALSE){
 ### as long as chrome or firefox are your default browsers
 ### this should work in Rstudio, the Rgui, or even a terminal window on mac
 library(shiny)
-runGitHub("SSD-Shiny", "gcarrghub",launch.browser=TRUE)
-
+runGitHub("SSDV2", "gcarrghub",launch.browser=TRUE,ref="main")
+###   ref="main" is important.  GitHub changed their naming conventions where
+###   originally the root archive location was called "master" then changed
+###   to "main".  runGitHub currently defaults to "master" so my old tools
+###   don't have the ref= argument.  In future, they should probably make it
+###   required.  The errors are not intuitive.
 
 if(FALSE){
   ### If Firefox or Chrome are not default browser, open tool with
