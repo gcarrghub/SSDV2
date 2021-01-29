@@ -249,9 +249,9 @@ shinyServer(function(input, output, session){
           sliderInput("figW", label = "Fig Wd (in)",  min = 3,max = 12,value = 8,step = 0.5)
         ),
         splitLayout(
-          sliderInput("axisSize", label = "Tick Labels",min = 0.1,max = 4,value = 1,step = 0.05),
-          sliderInput("labelSize",label = "Axis Labels",  min = 0.1,max = 4,value = 1,step = 0.05),
-          sliderInput("lineSize",label = "Line/Point Weight",  min = 0.1,max = 4,value = 1,step = 0.05)
+          sliderInput("axisSize", label = "Tick Labels",min = 0.1,max = 4,value = 1.5,step = 0.05),
+          sliderInput("labelSize",label = "Axis Labels",  min = 0.1,max = 4,value = 1.5,step = 0.05),
+          sliderInput("lineSize",label = "Line/Point Weight",  min = 0.1,max = 4,value = 2,step = 0.05)
         )
       )
     })
