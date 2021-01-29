@@ -810,7 +810,7 @@ shinyServer(function(input, output, session){
             #radioButtons("doseScale",label = "Exposure Scale",
             #       choices = c("Measured","Log"),inline = TRUE,selected = "Log")
             radioButtons("doseScale",label = "Analysis Scale",
-                         choices = c("Log"),inline = TRUE,selected = "Log")
+                         choices = c("Log10"),inline = TRUE,selected = "Log10")
     })
 
     output$runButton <- renderUI({
