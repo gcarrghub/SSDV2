@@ -32,12 +32,14 @@ getPlacesFMT <- function(x){
   places2print <- ifelse(places2print<0,yes = abs(places2print),no = 0)
   paste0("0.",paste0(rep("0",places2print),collapse = ""))
 }
+#checking
 getPlacesFMT(testData$responses)
 getPlacesFMT(testData$responses/1000)
 getPlacesFMT(testData$responses*1000)
 
 numFMT <- openxlsx::createStyle(fontSize=18,numFmt = getPlacesFMT(testData$responses))
 
+### Format the numeric values (decimal places) and italics for species
 addStyle(wb = wb,sheet = 1,style = speciesStyle,rows = 2+(1:nrow(testData)),
          cols = rep(1,nrow(testData)))
 addStyle(wb = wb,sheet = 1,style = numFMT,rows = 2+(1:nrow(testData)),
@@ -45,28 +47,47 @@ addStyle(wb = wb,sheet = 1,style = numFMT,rows = 2+(1:nrow(testData)),
 if(input$doGrps)addStyle(wb = wb,sheet = 1,style = speciesStyle,rows = 2+(1:nrow(testData)),
          cols = rep(3,nrow(testData)))
 
-apply(resultsTable,2,getPlacesFMT)
 
 SC.res <- 6
 RES.DF <- as.data.frame(resultsTable)
 RES.DF <- data.frame(Distribution=c("Normal","Logistic","Non-parametric"),RES.DF)
-writeData(wb = wb,sheet = 1,x = RES.DF,startCol = SC.res,startRow = 3,colNames = FALSE)
-writeData(wb = wb,sheet = 1,x = as.data.frame(rbind(c("Distribution","P",names(RES.DF)[3],"LowerCL","UpperCL","Loc Parm","Scale Parm","AD GOF"))),
+#Write the actual results starting in row 3, header added next
+#8 columns with params, 6 without
+RES.DF.noparms <- RES.DF[,-(6:7)]
+RES.parms <- RES.DF[-nrow(RES.DF),(6:7)]
+writeData(wb = wb,sheet = 1,x = RES.DF.noparms,startCol = SC.res,startRow = 3,colNames = FALSE)
+writeData(wb = wb,sheet = 1,x = as.data.frame(rbind(c("Distribution","P",names(RES.DF.noparms)[3],"LowerCL","UpperCL","AD GOF"))),
           startCol = SC.res,startRow = 1,colNames = FALSE)
-writeData(wb = wb,sheet = 1,x = as.data.frame(rbind(c("","",unitSTR,unitSTR,unitSTR,"","","p-value"))),
+writeData(wb = wb,sheet = 1,x = as.data.frame(rbind(c("","",unitSTR,unitSTR,unitSTR,"p-value"))),
           startCol = SC.res,startRow = 2,colNames = FALSE)
+
+#params to right, for completeness
+writeData(wb = wb,sheet = 1,x = RES.parms,startCol = SC.res+10,startRow = 3,colNames = FALSE)
+writeData(wb = wb,sheet = 1,x = as.data.frame(rbind(c("Parameters:","Location","Scale"))),
+          startCol = SC.res+9,startRow = 1,colNames = FALSE)
+writeData(wb = wb,sheet = 1,x = as.data.frame(rbind(c("(log scale)","(log scale)"))),
+          startCol = SC.res+10,startRow = 2,colNames = FALSE)
+
 ### format numeric output
-for(i in SC.res + 1:(ncol(RES.DF)-1)){
+for(i in SC.res + 1:(ncol(RES.DF.noparms)-1)){
   colStyle <- createStyle(
     fontSize = 18,
-    numFmt = getPlacesFMT(RES.DF[,i-(SC.res-1)])
+    numFmt = getPlacesFMT(RES.DF.noparms[,i-(SC.res-1)])
   )
-  addStyle(wb = wb,sheet = 1,style = colStyle,rows = 2+(1:nrow(RES.DF)),cols = i)
+  addStyle(wb = wb,sheet = 1,style = colStyle,rows = 2+(1:nrow(RES.DF.noparms)),cols = i)
+}
+for(i in (1:2)){
+  colStyle <- createStyle(
+    fontSize = 18,
+    numFmt = getPlacesFMT(RES.parms[,i])
+  )
+  addStyle(wb = wb,sheet = 1,style = colStyle,rows = 2+(1:nrow(RES.parms)),cols = i+SC.res+10-1)
 }
 # row label of results
-addStyle(wb = wb,sheet = 1,style = createStyle(fontSize=18),rows = 2+(1:nrow(RES.DF)),cols = SC.res)
+addStyle(wb = wb,sheet = 1,style = createStyle(fontSize=18),
+         rows = 2+(1:nrow(RES.DF)),cols = SC.res,gridExpand = TRUE,stack = TRUE)
 # all first row is bold/size
-addStyle(wb = wb,sheet = 1,style = headerStyle,rows=1,cols = 1:20)
+addStyle(wb = wb,sheet = 1,style = headerStyle,rows=1,cols = 1:20,stack = TRUE)
 # right-align numeric headers
 addStyle(wb = wb,sheet = 1,style = createStyle(halign = "right"),rows=1,cols = c(2,(SC.res+1):20),stack = TRUE)
 # right-align units in 2nd row
