@@ -17,8 +17,13 @@ shinyServer(function(input, output, session){
   serverEnv <- environment()
 
   # if reset button is pressed
-  observeEvent(input$reset_button, {js$reset()})
+  observeEvent(input$reset_button, {
+    js$reset()
+    updateTabsetPanel(session, "outputTabActive",selected = "Help")
+  })
 
+  # Begin with focus on help
+  updateTabsetPanel(session, "outputTabActive",selected = "Help")
   #when rvs$setupComplete is 0, it means that the preview button
   #must be clicked to commit selections and view data plot
   #prior to analysis being run.  This will result in rvs$setupComplete
@@ -42,6 +47,7 @@ shinyServer(function(input, output, session){
   rvs$SSD.complete <- 0
   rvs$dataImported <- 0
   rvs$dataChecked <- 0
+  rvs$varsChecked <- 0
   rvs$SSDdata <- 0
   output$dataChecked <- reactive({rvs$dataChecked})
   outputOptions(output,"dataChecked",suspendWhenHidden = FALSE)
@@ -168,20 +174,32 @@ shinyServer(function(input, output, session){
       #input$doLegend
     )
   })
+  #
+  newVars <- reactive({
+    list(
+      input$sort_x,
+      input$sort_y,
+      input$sort_z
+      #input$doGrays
+      #input$doLegend
+    )
+  })
   observeEvent(goBack(),
                {
                  print("Inside observe event on goBack()")
-
+                 updateTabsetPanel(session, "outputTabActive",selected = "Help")
                  rvs$setupComplete <- 0
                  rvs$SSD.complete <- 0
                  rvs$dataImported <- 0
                  rvs$dataChecked <- 0
+                 rvs$varsChecked <- 0
                  rvs$SSDdata <- 0
                  rvs$finalDF <- NULL
                  rvs$inputDF <- NULL
                  #output$dataChecked <- reactive({rvs$dataChecked})
                  #Don't go further unless something is pasted into the data box
                  req(input$pasteData)
+                 updateTabsetPanel(session, "outputTabActive",selected = "Output")
                  if(is.null(input$pasteData))return(indata=NULL)
                  print((input$pasteData))
                  #put data into regular object and process it
@@ -222,6 +240,238 @@ shinyServer(function(input, output, session){
                  output$DTtableRaw <- DT::renderDT(outputDT.Raw)
                },ignoreInit = TRUE)
 
+  observeEvent(newVars(),{
+    req(input$analysisType=="SSD")
+    rvs$SSDdata <- 0
+    rvs$dataChecked <- 0
+    req(rvs$dataImported == 1 & rvs$dataChecked == 0 & rvs$varsChecked == 0)# & is.null(rvs$finalDF))
+    updateTabsetPanel(session, "outputTabActive",selected = "Output")
+    #shiny::req(getData())
+    testData <- rvs$inputDF
+    #req({rvs$dataImported == 1})
+    namesInFrame <- names(testData)
+
+    if(!input$doGrps){
+      print(c(species=input$sort_x,responses=input$sort_y))
+      # this forces wait until both vars are selected
+      print("SSD check 2")
+      testData <- rvs$inputDF
+      namesInFrame <- names(testData)
+      if(!all(c("species","responses") %in% namesInFrame)){
+        #Check that each selection is made
+        print("Match check")
+        req(input$sort_x)
+        req(input$sort_y)
+        req({input$sort_x != input$sort_y})
+        print(c(Spec.var=input$sort_x,NOEC.var=input$sort_y))
+        print("Both matches made")
+        oldNames <- c(input$sort_x,input$sort_y)
+        print(oldNames)
+        testData <- testData[,oldNames]
+        names(testData) <- c("species","responses")
+      }
+      print(testData)
+      print("ready to do formattable() on testData")
+      print(head(testData))
+      ### once we get here, we can assume that the data have been correctly identified
+      outputDT.1 <- as.datatable(formattable(testData[,c("species","responses")],
+                                             #align =c("r","l"),
+                                             list(
+                                               species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
+                                               responses = formatter("span", style = ~ style(color="green", float="right")))),
+                                 class = 'stripe compact',
+                                 #escape = FALSE,
+                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                   #autoWidth = TRUE,
+                                   pageLength = 10, info = FALSE,
+                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                   scrollX = TRUE, scrollY = FALSE,
+                                   paging = TRUE, ordering = FALSE,
+                                   searching = FALSE))
+      #%>%
+      #  DT::formatRound(columns = 2,digits = roundTo)
+      #if(FALSE)outputDT <- DT::datatable(outputDT,
+      #                          class = 'row-border stripe hover compact nowrap',
+      #                          rownames = FALSE,
+      #                          autoHideNavigation = TRUE, escape =FALSE) %>%
+      #formatStyle(columns = "Species",
+      #            target="cell",
+      #            fontWeight = styleEqual(1:nrow(outputData), rep("bold",nrow(outputData)))) %>%
+      #DT::formatRound(columns = 2,digits = roundTo)
+      #output$DTtableRaw <- DT::renderDT(rvs$inputDF)
+      output$DTtable <- DT::renderDT(outputDT.1)
+      
+      #output$table <- renderTable(testData)
+      
+      # Then, do a couple of checks
+      if(length(unique(testData$species))<nrow(testData))alerID <- shinyalert(
+        title = "Warning",
+        text = "Species labels not all unique.\nCheck if unexpected.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      if(!is.numeric(testData$responses))alerID <- shinyalert(
+        title = "Warning",
+        text = "Response variable not numeric.\nCheck input!!",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      rvs$dataChecked <- 1
+      #And at this point, blank out other sections of the inputs interface
+      #these should only appear once data has been set up.
+      output$scaleSelect <- NULL
+      output$varLabels <- NULL
+      output$downloadExcel <- NULL
+      output$downloadPDF <- NULL
+      output$Excelbutton <- NULL
+      output$PDFbutton <- NULL
+      output$setupButton <- NULL
+      output$SSD.1.1 <- NULL
+      output$SSD.1.2 <- NULL
+      output$SSD.1.3 <- NULL
+      #output$SSD.2.1 <- NULL
+      #output$SSD.2.2 <- NULL
+      #output$SSDoptshead <- NULL
+      output$SSDconditional2 <- NULL
+    }
+    
+    
+    if(input$doGrps){
+      print(c(species=input$sort_x,responses=input$sort_y,groups=input$sort_z))
+      # this forces wait until both vars are selected
+      print("SSD check 2")
+      testData <- rvs$inputDF
+      namesInFrame <- names(testData)
+      if(!all(c("species","responses","groups") %in% namesInFrame)){
+        #Check that each selection is made
+        print("Match check")
+        req(input$sort_x)
+        req(input$sort_y)
+        req(input$sort_z)
+        print(c(Spec.var=input$sort_x,NOEC.var=input$sort_y,Group.var=input$sort_z))
+        print("All 3 matches made")
+        oldNames <- c(input$sort_x,input$sort_y,input$sort_z)
+        print(oldNames)
+        testData <- testData[,oldNames]
+        names(testData) <- c("species","responses","groups")
+      }
+      print("ready to do formattable() on testData")
+      print(head(testData))
+      ### once we get here, we can assume that the data have been correctly identified
+      outputDT.1 <- as.datatable(formattable(testData[,c("species","responses","groups")],
+                                             #align =c("r","l"),
+                                             list(
+                                               species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
+                                               responses = formatter("span", style = ~ style(color="green", float="right")),
+                                               groups=formatter("span", style = ~ style(color = "blue")))),
+                                 class = 'stripe compact',
+                                 #escape = FALSE,
+                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
+                                   #autoWidth = TRUE,
+                                   pageLength = 10, info = FALSE,
+                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
+                                   scrollX = TRUE, scrollY = FALSE,
+                                   paging = TRUE, ordering = FALSE,
+                                   searching = FALSE))
+      #%>%
+      #  DT::formatRound(columns = 2,digits = roundTo)
+      #if(FALSE)outputDT <- DT::datatable(outputDT,
+      #                          class = 'row-border stripe hover compact nowrap',
+      #                          rownames = FALSE,
+      #                          autoHideNavigation = TRUE, escape =FALSE) %>%
+      #formatStyle(columns = "Species",
+      #            target="cell",
+      #            fontWeight = styleEqual(1:nrow(outputData), rep("bold",nrow(outputData)))) %>%
+      #DT::formatRound(columns = 2,digits = roundTo)
+      #output$DTtableRaw <- DT::renderDT(rvs$inputDF)
+      output$DTtable <- DT::renderDT(outputDT.1)
+      
+      #output$table <- renderTable(testData)
+      
+      # Then, do a couple of checks
+      if(length(unique(testData$species))<nrow(testData))alerID <- shinyalert(
+        title = "Warning",
+        text = "Species labels not all unique.\nCheck if unexpected.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      if(!is.numeric(testData$responses))alerID <- shinyalert(
+        title = "Warning",
+        text = "Response variable not numeric.\nCheck input!!",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "success",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+      rvs$dataChecked <- 1
+      #And at this point, blank out other sections of the inputs interface
+      #these should only appear once data has been set up.
+      output$scaleSelect <- NULL
+      output$varLabels <- NULL
+      output$downloadExcel <- NULL
+      output$downloadPDF <- NULL
+      output$Excelbutton <- NULL
+      output$PDFbutton <- NULL
+      output$setupButton <- NULL
+      output$SSD.1.1 <- NULL
+      output$SSD.1.2 <- NULL
+      output$SSD.1.3 <- NULL
+      #output$SSD.2.1 <- NULL
+      #output$SSD.2.2 <- NULL
+      #output$SSDoptshead <- NULL
+      output$SSDconditional2 <- NULL
+    }
+    ### as others are added, these will be populated like SSD
+    
+    #calculate the nonparametric quantiles of the data for all plotting
+    xVals <- quantile(log10(testData$responses),probs = seq(0.0001,0.9999,length=10000),type=8)
+    yVals <- seq(0.0001,0.9999,length=10000)
+    pointIDs <- sapply(log10(testData$responses),FUN = function(x)which.min(abs(x-xVals)))
+    pointIDs[1] <- max(which(xVals==xVals[1]))
+    testData$yVals <- yVals[pointIDs]
+    rvs$finalDF <- testData
+    
+    req(!is.null(rvs$finalDF))
+    print("FinalDF is found, set reactives for SSD")
+    if(all(c("species","responses") %in% names(rvs$finalDF))){
+      rvs$SSDdata <- 1
+      rvs$dataChecked <- 1
+    }
+  })
 
   ### observeEvent(input$xLab,{
   ###  parenPos <- gregexpr(pattern="[()]",text = input$xLab)[[1]]
@@ -241,6 +491,7 @@ shinyServer(function(input, output, session){
         h3("Finalize inputs above",style="color: red"))})
     print(c(dataImported = rvs$dataImported, dataChecked=rvs$dataChecked,nullFinal = as.numeric(!is.null(rvs$finalDF))))
     req(rvs$dataImported == 1 & rvs$dataChecked == 1 & !is.null(rvs$finalDF))
+    updateTabsetPanel(session, "outputTabActive",selected = "Output")
     output$graphOpts <- renderUI({
       tagList(
         h3("Graphics options:"),
@@ -261,7 +512,8 @@ shinyServer(function(input, output, session){
   #here, instead of everything in one block, do each anlysis type separately
   observe({
     req(input$analysisType=="SSD")
-    req(rvs$dataImported == 1 & rvs$dataChecked == 0)# & is.null(rvs$finalDF))
+    req(rvs$dataImported == 1 & rvs$dataChecked == 0 & rvs$varsChecked == 0)# & is.null(rvs$finalDF))
+    updateTabsetPanel(session, "outputTabActive",selected = "Output")
     #shiny::req(getData())
     testData <- rvs$inputDF
     #req({rvs$dataImported == 1})
@@ -269,96 +521,142 @@ shinyServer(function(input, output, session){
     source("ComboDragDrops.R",local = TRUE)
     print("build variable selections interface")
     print(input$analysisType)
+    numericVars <- which(unlist(lapply(testData,is.numeric)))
+    uniqueCounts <- unlist(lapply(testData,FUN = function(x)length(unique(x))))
+    if(length(numericVars)==0 | max(uniqueCounts)<nrow(testData)){stop("There is a problem with your data (no numeric or every var has duplicates)")}
     if(!input$doGrps){
-      specMatch <- respMatch <-0
-      if(all(c("species","responses") %in% namesInFrame)){
-        print("Default vars found")
-        specMatch <- which(namesInFrame=="species")
-        respMatch <- which(namesInFrame=="responses")
-        output$varSelects <- renderUI({
-          tagList(
-            selectInput(inputId="sort_x","Species:","species"),
-            selectInput(inputId="sort_y","Responses/NOECs:","responses")
-          )
-        })
-        print(c(species=input$species,responses=input$responses))
-        #print("Set SSDdata = 1")
-        #rvs$SSDdata <- 1
-        #rvs$dataChecked <- 1
-      }
-      #if exact matches not found, try approximate
-      if(prod(c(respMatch, specMatch))==0){
-        #
+      bestResp <- (names(testData)[numericVars])[which.max(uniqueCounts)[numericVars]]
+      bestSpecies <- (names(testData)[-numericVars])[which.max(uniqueCounts)[-numericVars]]
+      output$varSelects <- renderUI({
+        tagList(
+          selectInput(inputId="sort_y","Responses/NOECs:",choices = names(testData)[numericVars],selected = bestResp),
+          selectInput(inputId="sort_x","Species:",choices = names(testData),selected = bestSpecies)
+        )}
+        )
+      if(FALSE){
         specMatch <- respMatch <-0
-        namesLC <- tolower(namesInFrame)
-        if(any(regexpr("spec",namesLC)>0))specMatch<- which(regexpr("spec",namesLC)>0)
-        if(any(regexpr("resp",namesLC)>0))respMatch<- which(regexpr("resp",namesLC)>0)
-        if(any(regexpr("noec",namesLC)>0))respMatch<- which(regexpr("noec",namesLC)>0)
-        if(specMatch>0 & respMatch>0){
+        if(all(c("species","responses") %in% namesInFrame)){
+          print("Default vars found")
+          specMatch <- which(namesInFrame=="species")
+          respMatch <- which(namesInFrame=="responses")
           output$varSelects <- renderUI({
             tagList(
-              selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
-              selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch])
+              selectInput(inputId="sort_x","Species:","species"),
+              selectInput(inputId="sort_y","Responses/NOECs:","responses")
             )
           })
+          print(c(species=input$species,responses=input$responses))
+          #print("Set SSDdata = 1")
+          #rvs$SSDdata <- 1
+          #rvs$dataChecked <- 1
         }
-      }
-      ### as last resort when still no obvious matching, make user match vars to roles
-      if(prod(c(respMatch, specMatch))==0){
-        print("Names not defaults.  Assign Resp and Grp variable roles")
-        output$varSelects <- renderUI(DD.SSD)
-        print("SSD Var Selects Completed")
-        print("Set SSDdata = 1")
+        #if exact matches NOT found, try approximate
+        if(prod(c(respMatch, specMatch))==0){
+          print("Sorting out variable names")
+          specMatch <- respMatch <-0
+          namesLC <- tolower(namesInFrame)
+          if(any(regexpr("spec",namesLC)>0))specMatch<- which(regexpr("spec",namesLC)>0)[1]
+          if(any(regexpr("resp",namesLC)>0))respMatch<- which(regexpr("resp",namesLC)>0)[1]
+          if(any(regexpr("noec",namesLC)>0))respMatch<- which(regexpr("noec",namesLC)>0)[1]
+          specCT <- length(which(regexpr("spec",namesLC)>0))
+          respCT <- length(c(which(regexpr("resp",namesLC)>0),
+                             which(regexpr("noec",namesLC)>0)))
+          print(c(specCT=specCT,respCT=respCT))
+          nameConfusion <- (max(c(specCT,respCT))>1)
+          buildDragDrop <- (prod(c(respMatch, specMatch))>0) & !nameConfusion
+          print(c(nameConfusion=nameConfusion,buildDragDrop=buildDragDrop))
+          #if buildDragDrop==FALSE, then above found partial matches, and just use those
+          if(!nameConfusion){
+            output$varSelects <- renderUI({
+              tagList(
+                selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
+                selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch])
+              )
+            })
+          }
+        }
+        ### as last resort when still no obvious matching, make user match vars to roles
+        if(prod(c(respMatch, specMatch))==0 | nameConfusion){
+          print("Names not defaults.  Assign Resp and Grp variable roles")
+          output$varSelects <- renderUI(DD.SSD)
+          print("SSD Var Selects Completed")
+          print("Set SSDdata = 1")
+        }
       }
       # once the varSelects is completed, finalDF should be created
     }
+    
     if(input$doGrps){
-      grpMatch <- respMatch <- specMatch <- 0
-      if(all(c("species","responses","groups") %in% namesInFrame)){
-        print("Default vars found")
-        specMatch <- which(namesInFrame=="species")
-        respMatch <- which(namesInFrame=="responses")
-        grpMatch <- which(namesInFrame=="groups")
-        output$varSelects <- renderUI({
-          tagList(
-            selectInput(inputId="sort_x","Species:","species"),
-            selectInput(inputId="sort_y","Responses/NOECs:","responses"),
-            selectInput(inputId="sort_z","Grouping Var:","groups")
-          )
-        })
-        print(c(species=input$species,responses=input$responses,groups=input$groups))
-        #print("Set SSDdata = 1")
-        #rvs$SSDdata <- 1
-        #rvs$dataChecked <- 1
-      }
-      #if exact matches not found, try approximate -- hopefully this does not cause problems!
-      if(prod(c(grpMatch, respMatch, specMatch))==0){
+      if(ncol(testData)<3) stop("If you are grouping data, need 3 columns (response, species, group)")
+      bestResp <- (names(testData)[numericVars])[which.max(uniqueCounts)[numericVars]]
+      bestSpecies <- (names(testData)[-numericVars])[which.max(uniqueCounts)[-numericVars]]
+      bestGroup <- names(testData)[which.min(uniqueCounts)]
+      output$varSelects <- renderUI({
+        tagList(
+          selectInput(inputId="sort_y","Responses/NOECs:",choices = names(testData)[numericVars],selected = bestResp),
+          selectInput(inputId="sort_x","Species:",choices = names(testData),selected = bestSpecies),
+          selectInput(inputId="sort_z","Grouping:",choices = names(testData),selected = bestGroup)
+        )}
+      )
+      
+      if(FALSE){
         grpMatch <- respMatch <- specMatch <- 0
-        namesLC <- tolower(namesInFrame)
-        ### in cases of multiple matches, first is taken, at least in part to avoid errors
-        if(any(regexpr("spec",namesLC)>0))specMatch<- which(regexpr("spec",namesLC)>0)[1]
-        if(any(regexpr("resp",namesLC)>0))respMatch<- which(regexpr("resp",namesLC)>0)[1]
-        if(any(regexpr("noec",namesLC)>0))respMatch<- which(regexpr("noec",namesLC)>0)[1]
-        if(any(regexpr("group",namesLC)>0))grpMatch<- which(regexpr("group",namesLC)>0)[1]
-        if(any(regexpr("grp",namesLC)>0))grpMatch<- which(regexpr("grp",namesLC)>0)[1]
-        if(any(regexpr("taxon",namesLC)>0))grpMatch<- which(regexpr("taxon",namesLC)>0)[1]
-        if(prod(c(grpMatch, respMatch, specMatch))>0){
+        if(all(c("species","responses","groups") %in% namesInFrame)){
+          print("Default vars found")
+          specMatch <- which(namesInFrame=="species")
+          respMatch <- which(namesInFrame=="responses")
+          grpMatch <- which(namesInFrame=="groups")
           output$varSelects <- renderUI({
             tagList(
-              selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
-              selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch]),
-              selectInput(inputId="sort_z","Grouping:",namesInFrame[grpMatch])
+              selectInput(inputId="sort_x","Species:","species"),
+              selectInput(inputId="sort_y","Responses/NOECs:","responses"),
+              selectInput(inputId="sort_z","Grouping:","groups")
             )
           })
+          print(c(species=input$species,responses=input$responses,groups=input$groups))
+          #print("Set SSDdata = 1")
+          #rvs$SSDdata <- 1
+          #rvs$dataChecked <- 1
+        }
+        #if exact matches not found, try approximate -- hopefully this does not cause problems!
+        if(prod(c(grpMatch, respMatch, specMatch))==0){
+          grpMatch <- respMatch <- specMatch <- 0
+          namesLC <- tolower(namesInFrame)
+          ### in cases of multiple matches, first is taken, at least in part to avoid errors
+          if(any(regexpr("spec",namesLC)>0))specMatch<- which(regexpr("spec",namesLC)>0)[1]
+          if(any(regexpr("resp",namesLC)>0))respMatch<- which(regexpr("resp",namesLC)>0)[1]
+          if(any(regexpr("noec",namesLC)>0))respMatch<- which(regexpr("noec",namesLC)>0)[1]
+          if(any(regexpr("grp",namesLC)>0))grpMatch<- which(regexpr("grp",namesLC)>0)[1]
+          if(any(regexpr("taxon",namesLC)>0))grpMatch<- which(regexpr("taxon",namesLC)>0)[1]
+          if(any(regexpr("group",namesLC)>0))grpMatch<- which(regexpr("group",namesLC)>0)[1]
+          specCT <- length(which(regexpr("spec",namesLC)>0))
+          respCT <- length(c(which(regexpr("resp",namesLC)>0),
+                             which(regexpr("noec",namesLC)>0)))
+          grpCT <- length(c(which(regexpr("grp",namesLC)>0),
+                            which(regexpr("taxon",namesLC)>0),
+                            which(regexpr("group",namesLC)>0)))
+          nameConfusion <- (max(c(specCT,respCT,grpCT))>1)
+          buildDragDrop <- (prod(c(grpMatch, respMatch, specMatch))>0) & !nameConfusion
+          #if buildDragDrop==FALSE, then above found partial matches, and just use those
+          if(buildDragDrop==FALSE){
+            output$varSelects <- renderUI({
+              tagList(
+                selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
+                selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch]),
+                selectInput(inputId="sort_z","Grouping:",namesInFrame[grpMatch])
+              )
+            })
+          }
+        }
+        ### as last resort if still NO matches, make user match vars to roles
+        if(prod(c(grpMatch, respMatch, specMatch))==0 | buildDragDrop){
+          print("Names not defaults.  Assign variable roles")
+          output$varSelects <- renderUI(DD.SSD3)
+          print("SSD Var Selects Completed")
         }
       }
-      ### as last resort if still matches, make user match vars to roles
-      if(prod(c(grpMatch, respMatch, specMatch))==0){
-        print("Names not defaults.  Assign variable roles")
-        output$varSelects <- renderUI(DD.SSD3)
-        print("SSD Var Selects Completed")
-      }
-    }
+      print(c(sort_x=input$sort_x,sort_y=input$sort_y))
+}
 
     req(!is.null(rvs$finalDF))
     print("FinalDF is found, set reactives for SSD")
@@ -503,219 +801,6 @@ shinyServer(function(input, output, session){
     print("After SSD var selections made, adjust names/checks.")
     req(input$analysisType=="SSD")
     req(rvs$dataImported == 1 & rvs$dataChecked == 0)
-    if(!input$doGrps){
-      print(c(species=input$sort_x,responses=input$sort_y))
-      # this forces wait until both vars are selected
-      print("SSD check 2")
-      testData <- rvs$inputDF
-      namesInFrame <- names(testData)
-      if(!all(c("species","responses") %in% namesInFrame)){
-        #Check that each selection is made
-        print("Match check")
-        req(input$sort_x)
-        req(input$sort_y)
-        req({input$sort_x != input$sort_y})
-        print(c(Spec.var=input$sort_x,NOEC.var=input$sort_y))
-        print("Both matches made")
-        oldNames <- c(input$sort_x,input$sort_y)
-        print(oldNames)
-        testData <- testData[,oldNames]
-        names(testData) <- c("species","responses")
-      }
-      print(testData)
-      print("ready to do formattable() on testData")
-      print(head(testData))
-      ### once we get here, we can assume that the data have been correctly identified
-      outputDT.1 <- as.datatable(formattable(testData[,c("species","responses")],
-                                             #align =c("r","l"),
-                                             list(
-                                               species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
-                                               responses = formatter("span", style = ~ style(color="green", float="right")))),
-                                 class = 'stripe compact',
-                                 #escape = FALSE,
-                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
-                                   #autoWidth = TRUE,
-                                   pageLength = 10, info = FALSE,
-                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
-                                   scrollX = TRUE, scrollY = FALSE,
-                                   paging = TRUE, ordering = FALSE,
-                                   searching = FALSE))
-      #%>%
-      #  DT::formatRound(columns = 2,digits = roundTo)
-      #if(FALSE)outputDT <- DT::datatable(outputDT,
-      #                          class = 'row-border stripe hover compact nowrap',
-      #                          rownames = FALSE,
-      #                          autoHideNavigation = TRUE, escape =FALSE) %>%
-      #formatStyle(columns = "Species",
-      #            target="cell",
-      #            fontWeight = styleEqual(1:nrow(outputData), rep("bold",nrow(outputData)))) %>%
-      #DT::formatRound(columns = 2,digits = roundTo)
-      #output$DTtableRaw <- DT::renderDT(rvs$inputDF)
-      output$DTtable <- DT::renderDT(outputDT.1)
-
-      #output$table <- renderTable(testData)
-
-      # Then, do a couple of checks
-      if(length(unique(testData$species))<nrow(testData))alerID <- shinyalert(
-        title = "Warning",
-        text = "Species labels not all unique.\nCheck if unexpected.",
-        closeOnEsc = TRUE,
-        closeOnClickOutside = FALSE,
-        html = FALSE,
-        type = "success",
-        showConfirmButton = TRUE,
-        showCancelButton = FALSE,
-        confirmButtonText = "OK",
-        confirmButtonCol = "#AEDEF4",
-        timer = 0,
-        imageUrl = "",
-        animation = TRUE
-      )
-      if(!is.numeric(testData$responses))alerID <- shinyalert(
-        title = "Warning",
-        text = "Response variable not numeric.\nCheck input!!",
-        closeOnEsc = TRUE,
-        closeOnClickOutside = FALSE,
-        html = FALSE,
-        type = "success",
-        showConfirmButton = TRUE,
-        showCancelButton = FALSE,
-        confirmButtonText = "OK",
-        confirmButtonCol = "#AEDEF4",
-        timer = 0,
-        imageUrl = "",
-        animation = TRUE
-      )
-      rvs$dataChecked <- 1
-      #And at this point, blank out other sections of the inputs interface
-      #these should only appear once data has been set up.
-      output$scaleSelect <- NULL
-      output$varLabels <- NULL
-      output$downloadExcel <- NULL
-      output$downloadPDF <- NULL
-      output$Excelbutton <- NULL
-      output$PDFbutton <- NULL
-      output$setupButton <- NULL
-      output$SSD.1.1 <- NULL
-      output$SSD.1.2 <- NULL
-      output$SSD.1.3 <- NULL
-      #output$SSD.2.1 <- NULL
-      #output$SSD.2.2 <- NULL
-      #output$SSDoptshead <- NULL
-      output$SSDconditional2 <- NULL
-    }
-
-
-    if(input$doGrps){
-      print(c(species=input$sort_x,responses=input$sort_y,groups=input$sort_z))
-      # this forces wait until both vars are selected
-      print("SSD check 2")
-      testData <- rvs$inputDF
-      namesInFrame <- names(testData)
-      if(!all(c("species","responses","groups") %in% namesInFrame)){
-        #Check that each selection is made
-        print("Match check")
-        req(input$sort_x)
-        req(input$sort_y)
-        req(input$sort_z)
-        print(c(Spec.var=input$sort_x,NOEC.var=input$sort_y,Group.var=input$sort_z))
-        print("All 3 matches made")
-        oldNames <- c(input$sort_x,input$sort_y,input$sort_z)
-        print(oldNames)
-        testData <- testData[,oldNames]
-        names(testData) <- c("species","responses","groups")
-      }
-      print("ready to do formattable() on testData")
-      print(head(testData))
-      ### once we get here, we can assume that the data have been correctly identified
-      outputDT.1 <- as.datatable(formattable(testData[,c("species","responses","groups")],
-                                             #align =c("r","l"),
-                                             list(
-                                               species = formatter("span", style = ~ style(color = "blue",font.style = "italic")),
-                                               responses = formatter("span", style = ~ style(color="green", float="right")),
-                                               groups=formatter("span", style = ~ style(color = "blue")))),
-                                 class = 'stripe compact',
-                                 #escape = FALSE,
-                                 options = list(#columnDefs = list(list(className = 'dt-right', targets = "_all")),
-                                   #autoWidth = TRUE,
-                                   pageLength = 10, info = FALSE,
-                                   lengthMenu = list(c(5,10, -1), c("5","10", "All")),
-                                   scrollX = TRUE, scrollY = FALSE,
-                                   paging = TRUE, ordering = FALSE,
-                                   searching = FALSE))
-      #%>%
-      #  DT::formatRound(columns = 2,digits = roundTo)
-      #if(FALSE)outputDT <- DT::datatable(outputDT,
-      #                          class = 'row-border stripe hover compact nowrap',
-      #                          rownames = FALSE,
-      #                          autoHideNavigation = TRUE, escape =FALSE) %>%
-      #formatStyle(columns = "Species",
-      #            target="cell",
-      #            fontWeight = styleEqual(1:nrow(outputData), rep("bold",nrow(outputData)))) %>%
-      #DT::formatRound(columns = 2,digits = roundTo)
-      #output$DTtableRaw <- DT::renderDT(rvs$inputDF)
-      output$DTtable <- DT::renderDT(outputDT.1)
-
-      #output$table <- renderTable(testData)
-
-      # Then, do a couple of checks
-      if(length(unique(testData$species))<nrow(testData))alerID <- shinyalert(
-        title = "Warning",
-        text = "Species labels not all unique.\nCheck if unexpected.",
-        closeOnEsc = TRUE,
-        closeOnClickOutside = FALSE,
-        html = FALSE,
-        type = "success",
-        showConfirmButton = TRUE,
-        showCancelButton = FALSE,
-        confirmButtonText = "OK",
-        confirmButtonCol = "#AEDEF4",
-        timer = 0,
-        imageUrl = "",
-        animation = TRUE
-      )
-      if(!is.numeric(testData$responses))alerID <- shinyalert(
-        title = "Warning",
-        text = "Response variable not numeric.\nCheck input!!",
-        closeOnEsc = TRUE,
-        closeOnClickOutside = FALSE,
-        html = FALSE,
-        type = "success",
-        showConfirmButton = TRUE,
-        showCancelButton = FALSE,
-        confirmButtonText = "OK",
-        confirmButtonCol = "#AEDEF4",
-        timer = 0,
-        imageUrl = "",
-        animation = TRUE
-      )
-      rvs$dataChecked <- 1
-      #And at this point, blank out other sections of the inputs interface
-      #these should only appear once data has been set up.
-      output$scaleSelect <- NULL
-      output$varLabels <- NULL
-      output$downloadExcel <- NULL
-      output$downloadPDF <- NULL
-      output$Excelbutton <- NULL
-      output$PDFbutton <- NULL
-      output$setupButton <- NULL
-      output$SSD.1.1 <- NULL
-      output$SSD.1.2 <- NULL
-      output$SSD.1.3 <- NULL
-      #output$SSD.2.1 <- NULL
-      #output$SSD.2.2 <- NULL
-      #output$SSDoptshead <- NULL
-      output$SSDconditional2 <- NULL
-    }
-    ### as others are added, these will be populated like SSD
-
-    #calculate the nonparametric quantiles of the data for all plotting
-    xVals <- quantile(log10(testData$responses),probs = seq(0.0001,0.9999,length=10000),type=8)
-    yVals <- seq(0.0001,0.9999,length=10000)
-    pointIDs <- sapply(log10(testData$responses),FUN = function(x)which.min(abs(x-xVals)))
-    pointIDs[1] <- max(which(xVals==xVals[1]))
-    testData$yVals <- yVals[pointIDs]
-    rvs$finalDF <- testData
 
 
     if(input$analysisType!="SSD"){
@@ -837,6 +922,7 @@ shinyServer(function(input, output, session){
     print("Preview Data has been clicked")
     req(rvs$finalDF)
 
+    updateTabsetPanel(session, "outputTabActive",selected = "Output")
     testData <- rvs$finalDF
     previewFile <- tempfile(fileext = ".png",tmpdir = "www")
     namesInFrame <- names(testData)

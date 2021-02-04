@@ -1,7 +1,6 @@
-packages = unique(c("devtools","shiny","shinyjs","shinyalert","shinyWidgets","rhandsontable",# only if for table output
-             "markdown","rmarkdown","knitr","htmlwidgets","sortable",
-             "magrittr","isotone","parallel","formattable","DT",
-             "RColorBrewer","multcomp","openxlsx","isotone","ADGofTest"))
+packages = unique(c("devtools","shiny","shinyjs","shinyalert","shinyWidgets",# only if for table output
+                    "htmlwidgets","magrittr","parallel","formattable","DT",
+                    "RColorBrewer","multcomp","openxlsx","ADGofTest"))
 packageTests <- sapply(packages,FUN = require,character.only=TRUE)
 if(all(packageTests)){
   cat("\n",paste(rep("#",100),collapse = ""),
@@ -36,17 +35,17 @@ library(shiny)
 library(shinyjs)
 library(shinyalert)
 library(shinyWidgets)
-library(rhandsontable)# only if for table output
-library(markdown)# for PDF/markdown output
-library(rmarkdown)
-library(knitr)
+#library(sortable)
 library(htmlwidgets)
-library(sortable)
-library(magrittr)
-library(isotone)
-library(parallel)
+#library(rhandsontable)# only if for table output
 library(formattable)
 library(DT)
+#library(markdown)# for PDF/markdown output
+#library(rmarkdown)
+#library(knitr)
+library(magrittr)
+#library(isotone)
+library(parallel)
 library(RColorBrewer)
 library(multcomp)
 library(openxlsx)
@@ -138,12 +137,17 @@ shinyUI(
       mainPanel(
         ### I think this should work for any analysis:  a view of the input data before selections,
         ### after selections, and a preview plot, and that's it for now.
-        h3("Input data:"),
-        DTOutput("DTtableRaw",width = "75%"),
-        h3("Analysis data:"),
-        DTOutput("DTtable"),
-        h3("Preview plot:"),
-        conditionalPanel(condition="output.setupComplete",plotOutput("basePlot"))#,
+        tabsetPanel(type="tabs",id = "outputTabActive",
+                    tabPanel("Output",
+                      h3("Input data:"),
+                      DTOutput("DTtableRaw",width = "75%"),
+                      h3("Analysis data:"),
+                      DTOutput("DTtable"),
+                      h3("Preview plot:"),
+                      conditionalPanel(condition="output.setupComplete",plotOutput("basePlot"))#,
+                    ),
+                    tabPanel("Help",includeHTML(path = "SSD Analysis Tool.html"))
+                    )
         ### only for BMD, and that should probably be
         ### simplified since my old version somehow works
         ### outside of shiny, but not inside it.  Go figure.
