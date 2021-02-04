@@ -518,7 +518,7 @@ shinyServer(function(input, output, session){
     testData <- rvs$inputDF
     #req({rvs$dataImported == 1})
     namesInFrame <- names(testData)
-    source("ComboDragDrops.R",local = TRUE)
+    #source("ComboDragDrops.R",local = TRUE)
     print("build variable selections interface")
     print(input$analysisType)
     numericVars <- which(unlist(lapply(testData,is.numeric)))
