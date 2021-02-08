@@ -522,17 +522,28 @@ shinyServer(function(input, output, session){
     print("build variable selections interface")
     print(input$analysisType)
     numericVars <- which(unlist(lapply(testData,is.numeric)))
+    #responses are doses strictly > 0
+    numericVars <- numericVars[which(colSums(testData[,numericVars,drop=FALSE]<=0)==0)]
     uniqueCounts <- unlist(lapply(testData,FUN = function(x)length(unique(x))))
     if(length(numericVars)==0 | max(uniqueCounts)<nrow(testData)){stop("There is a problem with your data (no numeric or every var has duplicates)")}
+    bestResp <- (names(testData)[numericVars])[which(uniqueCounts[numericVars]==max(uniqueCounts[numericVars]))]
+    if(length(bestResp)>1){
+      print("Break ties on response variable by GOF testing")
+      print(bestResp)
+      gofP <- sapply(bestResp,FUN = function(resVar){
+        x <- log10(testData[,resVar])
+        ADGofTest::ad.test(x,distr.fun = pnorm,mean=mean(x),sd=sd(x))$p.value
+      })
+      print(gofP)
+      bestResp <- bestResp[which.max(gofP)]
+    }
+    bestSpecies <- (names(testData)[-numericVars])[which.max(uniqueCounts[-numericVars])]
     if(!input$doGrps){
-      bestResp <- (names(testData)[numericVars])[which.max(uniqueCounts)[numericVars]]
-      bestSpecies <- (names(testData)[-numericVars])[which.max(uniqueCounts)[-numericVars]]
       output$varSelects <- renderUI({
         tagList(
           selectInput(inputId="sort_y","Responses/NOECs:",choices = names(testData)[numericVars],selected = bestResp),
-          selectInput(inputId="sort_x","Species:",choices = names(testData),selected = bestSpecies)
-        )}
-        )
+          selectInput(inputId="sort_x","Species:",choices = names(testData),selected = bestSpecies))
+        })
       if(FALSE){
         specMatch <- respMatch <-0
         if(all(c("species","responses") %in% namesInFrame)){
@@ -588,17 +599,13 @@ shinyServer(function(input, output, session){
     
     if(input$doGrps){
       if(ncol(testData)<3) stop("If you are grouping data, need 3 columns (response, species, group)")
-      bestResp <- (names(testData)[numericVars])[which.max(uniqueCounts)[numericVars]]
-      bestSpecies <- (names(testData)[-numericVars])[which.max(uniqueCounts)[-numericVars]]
       bestGroup <- names(testData)[which.min(uniqueCounts)]
       output$varSelects <- renderUI({
         tagList(
           selectInput(inputId="sort_y","Responses/NOECs:",choices = names(testData)[numericVars],selected = bestResp),
           selectInput(inputId="sort_x","Species:",choices = names(testData),selected = bestSpecies),
-          selectInput(inputId="sort_z","Grouping:",choices = names(testData),selected = bestGroup)
-        )}
-      )
-      
+          selectInput(inputId="sort_z","Grouping:",choices = names(testData),selected = bestGroup))
+        })
       if(FALSE){
         grpMatch <- respMatch <- specMatch <- 0
         if(all(c("species","responses","groups") %in% namesInFrame)){

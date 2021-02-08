@@ -14,16 +14,16 @@ xmlns="http://www.w3.org/TR/REC-html40">
  <o:DocumentProperties>
   <o:Author>Gregory Carr</o:Author>
   <o:LastAuthor>Gregory Carr</o:LastAuthor>
-  <o:Revision>5</o:Revision>
-  <o:TotalTime>87</o:TotalTime>
+  <o:Revision>8</o:Revision>
+  <o:TotalTime>107</o:TotalTime>
   <o:Created>2021-02-02T15:21:00Z</o:Created>
-  <o:LastSaved>2021-02-04T20:20:00Z</o:LastSaved>
+  <o:LastSaved>2021-02-08T21:03:00Z</o:LastSaved>
   <o:Pages>1</o:Pages>
-  <o:Words>312</o:Words>
-  <o:Characters>1779</o:Characters>
-  <o:Lines>14</o:Lines>
+  <o:Words>340</o:Words>
+  <o:Characters>1940</o:Characters>
+  <o:Lines>16</o:Lines>
   <o:Paragraphs>4</o:Paragraphs>
-  <o:CharactersWithSpaces>2087</o:CharactersWithSpaces>
+  <o:CharactersWithSpaces>2276</o:CharactersWithSpaces>
   <o:Version>16.00</o:Version>
  </o:DocumentProperties>
  <o:OfficeDocumentSettings>
@@ -1614,10 +1614,14 @@ will assign variable roles according to the following rules:</span></h2>
 </div>
 
 <p class=MsoNormal><i>Response/NOEC value</i>:<span style='mso-spacerun:yes'> 
-</span>Only numeric data applies.<span style='mso-spacerun:yes'>  </span>If
-more than one column of numeric data is supplied, the first one with the most unique
-values is populated into the selection box, but the user can still select among
-the numeric data columns.</p>
+</span>Only numeric variables.<span style='mso-spacerun:yes'>  </span>If more
+than one column of numeric data is supplied, the one with the most unique
+values is populated into the selection box.<span style='mso-spacerun:yes'> 
+</span>If more than one variable meets the previous criterion, a normal goodness-of-fit
+test is used as a <span class=GramE>tie-breaker</span>.<span
+style='mso-spacerun:yes'>  </span>All numeric variables remain in the list of potential
+analysis variables, these rules only provide a guess to which variable is the one
+intended for analysis.</p>
 
 <p class=MsoNormal><i>Species label</i>:<span style='mso-spacerun:yes'> 
 </span>To be most general, this could be numeric or character.<span
@@ -1626,14 +1630,15 @@ populated.<span style='mso-spacerun:yes'>  </span>The program will respond with
 an error if the column chosen is not unique for every data value.</p>
 
 <p class=MsoNormal><i>Grouping variable</i>:<span style='mso-spacerun:yes'> 
-</span>The column with the fewest unique values is populated into this box,
-when the grouping checkbox is selected.<span style='mso-spacerun:yes'>  </span>Most
-groups should have at least two data values.<span style='mso-spacerun:yes'> 
-</span>Any with a single value may invalidate the grouping analysis.</p>
+</span>When the grouping checkbox is selected the column with the fewest unique
+values, but more than one, is populated.<span style='mso-spacerun:yes'> 
+</span>Most groups should have at least two data values.<span
+style='mso-spacerun:yes'>  </span>Any with a single value may invalidate the
+grouping statistical analysis.</p>
 
-<p class=MsoNormal>The tool will not permit the response and species columns to
-be the same, but the species column could be a grouping designation, and that
-variable can be selected for both species and grouping, if desired.</p>
+<p class=MsoNormal>The tool will allow variables to play dual roles (e.g., for
+a grouped analysis it may be of interest to label observations by taxonomic
+group instead of unique species labels).</p>
 
 <div style='mso-element:para-border-div;border:solid #4472C4 3.0pt;mso-border-themecolor:
 accent1;padding:0in 0in 0in 0in;background:#4472C4;mso-background-themecolor:
