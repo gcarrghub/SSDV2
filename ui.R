@@ -99,7 +99,7 @@ shinyUI(
                     cellArgs = list(style = c("align: left","align: center","align: right"))),
         uiOutput("effectSelects"),
         textAreaInput("pasteData",label="Data with column labels:",rows=3,
-                      placeholder = "Paste copied data here from Excel or similar."),
+                      placeholder = "Click inside this box and paste data (copied from Excel or similar)."),
         ### always need a response variable
         ### all of these will initally be set to None
         uiOutput("varSelects"),
