@@ -126,7 +126,9 @@ shinyServer(function(input, output, session){
 
     ### show the default variable names (the code is more general, such as ignores case...)
     if(input$analysisType=="SSD"){
-      output$defaultVars <- renderUI(HTML(
+      #The SSD analysis is now generalized to the point that default var names are unnecessary
+      output$defaultVars <- NULL
+      if(FALSE)output$defaultVars <- renderUI(HTML(
         paste(
           h5(HTML("Required (default)</br>columns:"),.noWS = c("after","before","outside")),
           p(HTML("<ul><li>species</li><li>responses</li><li>(groups)</li></ul>"),.noWS = c("after","before","outside"))
@@ -210,6 +212,8 @@ shinyServer(function(input, output, session){
                  varNames <- scan(text=inputLines[[1]],sep="\t",what=character())
                  print(varNames)
                  dataBody <- t(sapply(inputLines[-1],FUN=function(x)scan(text=x,sep="\t",what=character())))
+                 #if only one column of numbers, the t() above should be undone
+                 if(nrow(dataBody)==1)dataBody <- t(dataBody)
                  dimnames(dataBody) <- list(NULL,NULL)
                  print(dataBody)
                  inputDF <- structure(as.data.frame(dataBody,stringsAsFactors=FALSE),names=make.names(varNames))
@@ -262,7 +266,7 @@ shinyServer(function(input, output, session){
         print("Match check")
         req(input$sort_x)
         req(input$sort_y)
-        req({input$sort_x != input$sort_y})
+        #req({input$sort_x != input$sort_y})
         print(c(Spec.var=input$sort_x,NOEC.var=input$sort_y))
         print("Both matches made")
         oldNames <- c(input$sort_x,input$sort_y)

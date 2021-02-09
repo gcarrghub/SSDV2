@@ -79,21 +79,27 @@ shinyUI(
           no_outline = TRUE
         ),
         #actionButton("reset_button", "Reset Page",icon = icon("redo")),
-        splitLayout(
-          radioButtons("analysisType",label = "Select Analysis",selected = "SSD",
-                       choiceValues = list("Count","BMD","SK","Continuous","SSD"),
-                       choiceNames=list("LCx","Binary BMD","Spearman-Karber","BV","SSD")
-          ),
-          fluidPage(
-            wellPanel(uiOutput("defaultVars"))
-          )
+        ### before, we assigned default vars but current version does not work on that idea
+        radioButtons("analysisType",label = "Select Analysis",selected = "SSD",
+                     choiceValues = list("Count","BMD","SK","Continuous","SSD"),
+                     choiceNames=list("LCx","Binary BMD","Spearman-Karber","BV","SSD")
         ),
+        ### splitLayout(
+        ###   radioButtons("analysisType",label = "Select Analysis",selected = "SSD",
+        ###               choiceValues = list("Count","BMD","SK","Continuous","SSD"),
+        ###               choiceNames=list("LCx","Binary BMD","Spearman-Karber","BV","SSD")
+        ###  ),
+        ###  fluidPage(
+        ###    wellPanel(uiOutput("defaultVars"))
+        ###  )
+        ###),
         # in the server, these SSD inputs are NULLed out if the analysis is not SSD
         uiOutput("SSDoptshead"),
         splitLayout(uiOutput("SSD.2.1"),uiOutput("SSD.2.2"),uiOutput("SSD.2.3"),#cellWidths = "33%",
                     cellArgs = list(style = c("align: left","align: center","align: right"))),
         uiOutput("effectSelects"),
-        textAreaInput("pasteData",label="Paste data with column labels here:",rows=3),
+        textAreaInput("pasteData",label="Data with column labels:",rows=3,
+                      placeholder = "Paste copied data here from Excel or similar."),
         ### always need a response variable
         ### all of these will initally be set to None
         uiOutput("varSelects"),
