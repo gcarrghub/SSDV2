@@ -545,7 +545,7 @@ shinyServer(function(input, output, session){
     if(!input$doGrps){
       output$varSelects <- renderUI({
         tagList(
-          selectInput(inputId="sort_y","Responses/NOECs:",choices = names(testData)[numericVars],selected = bestResp),
+          selectInput(inputId="sort_y","Effect concentration:",choices = names(testData)[numericVars],selected = bestResp),
           selectInput(inputId="sort_x","Species:",choices = names(testData),selected = bestSpecies))
         })
       if(FALSE){
@@ -557,7 +557,7 @@ shinyServer(function(input, output, session){
           output$varSelects <- renderUI({
             tagList(
               selectInput(inputId="sort_x","Species:","species"),
-              selectInput(inputId="sort_y","Responses/NOECs:","responses")
+              selectInput(inputId="sort_y","Effect concentration:","responses")
             )
           })
           print(c(species=input$species,responses=input$responses))
@@ -585,7 +585,7 @@ shinyServer(function(input, output, session){
             output$varSelects <- renderUI({
               tagList(
                 selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
-                selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch])
+                selectInput(inputId="sort_y","Effect concentration:",namesInFrame[respMatch])
               )
             })
           }
@@ -606,7 +606,7 @@ shinyServer(function(input, output, session){
       bestGroup <- names(testData)[which.min(uniqueCounts)]
       output$varSelects <- renderUI({
         tagList(
-          selectInput(inputId="sort_y","Responses/NOECs:",choices = names(testData)[numericVars],selected = bestResp),
+          selectInput(inputId="sort_y","Effect concentration:",choices = names(testData)[numericVars],selected = bestResp),
           selectInput(inputId="sort_x","Species:",choices = names(testData),selected = bestSpecies),
           selectInput(inputId="sort_z","Grouping:",choices = names(testData),selected = bestGroup))
         })
@@ -620,7 +620,7 @@ shinyServer(function(input, output, session){
           output$varSelects <- renderUI({
             tagList(
               selectInput(inputId="sort_x","Species:","species"),
-              selectInput(inputId="sort_y","Responses/NOECs:","responses"),
+              selectInput(inputId="sort_y","Effect concentration:","responses"),
               selectInput(inputId="sort_z","Grouping:","groups")
             )
           })
@@ -653,7 +653,7 @@ shinyServer(function(input, output, session){
             output$varSelects <- renderUI({
               tagList(
                 selectInput(inputId="sort_x","Species:",namesInFrame[specMatch]),
-                selectInput(inputId="sort_y","Responses/NOECs:",namesInFrame[respMatch]),
+                selectInput(inputId="sort_y","Effect concentration:",namesInFrame[respMatch]),
                 selectInput(inputId="sort_z","Grouping:",namesInFrame[grpMatch])
               )
             })
@@ -752,7 +752,7 @@ shinyServer(function(input, output, session){
           output$varSelects <- renderUI({
             tagList(
               selectInput(inputId="sort_x","Species:","species"),
-              selectInput(inputId="sort_y","Responses/NOECs:","responses")
+              selectInput(inputId="sort_y","Effect concentration:","responses")
             )
           })
           print(c(species=input$species,responses=input$responses))
@@ -781,7 +781,7 @@ shinyServer(function(input, output, session){
           output$varSelects <- renderUI({
             tagList(
               selectInput(inputId="sort_x","Species:","species"),
-              selectInput(inputId="sort_y","Responses/NOECs:","responses"),
+              selectInput(inputId="sort_y","Effect concentration:","responses"),
               selectInput(inputId="sort_z","Grouping Var:","groups")
             )
           })
@@ -878,7 +878,7 @@ shinyServer(function(input, output, session){
         req(rvs$dataChecked==1)
         shinyWidgets::actionBttn(
           inputId="previewData",
-          label = "Inputs",
+          label = "Preview",
           icon = icon("check"),
           style = "pill",
           color = "danger",

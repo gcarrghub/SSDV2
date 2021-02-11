@@ -110,7 +110,6 @@ shinyUI(
         #sliderInput("ECXvalue", "Effect Level", 0.05, .95, 0.50, step = 0.05),
         uiOutput("scaleSelect"),
         uiOutput("varLabels"),
-        uiOutput("setupButton"),
         #uiOutput("xLabBox"),
         #uiOutput("yLabBox"),
         #textInput("xLab",label="Exposure label",value="Exposure Concentration"),
@@ -122,6 +121,7 @@ shinyUI(
                     cellArgs = list(style = c("align: left","align: right"))),
         splitLayout(uiOutput("SSD.2.4"),uiOutput("SSD.2.5"),#cellWidths = "33%",
                     cellArgs = list(style = c("align: left","align: right"))),
+        uiOutput("setupButton"),
         uiOutput("runButton"),
         h3("Results:"),
         ### idea is only to offer output when an analysis is complete.
@@ -149,7 +149,7 @@ shinyUI(
                       DTOutput("DTtableRaw",width = "75%"),
                       h3("Analysis data:"),
                       DTOutput("DTtable"),
-                      h3("Preview plot:"),
+                      h3("Preview plot (Nonparametric fit):"),
                       conditionalPanel(condition="output.setupComplete",plotOutput("basePlot"))#,
                     ),
                     tabPanel("Help",includeHTML(path = "SSD Analysis Tool.html"))
