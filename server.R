@@ -602,7 +602,7 @@ shinyServer(function(input, output, session){
     }
     
     if(input$doGrps){
-      if(ncol(testData)<3) stop("If you are grouping data, need 3 columns (response, species, group)")
+      #if(ncol(testData)<3) stop("If you are grouping data, need 3 columns (response, species, group)")
       bestGroup <- names(testData)[which.min(uniqueCounts)]
       output$varSelects <- renderUI({
         tagList(

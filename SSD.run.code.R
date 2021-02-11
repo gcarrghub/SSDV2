@@ -28,7 +28,8 @@ if(input$doGrps){
   #since group labels on the left, adjust up if number of characters is large?
   max(nchar(levels(lmData$groups)))
   par(mai=c(input$figH*0.15, input$figW*0.30, 0, 0)+0.1,omi=rep(0,4))
-
+  pageBreakPDF("Group Differences\nAnalysis")
+  
   plot(y=c(1:length(levels(lmData$groups))),x=10^confOBJ$confint[,1],
        xlim=10^range(c(range(confOBJ$confint),lmData$log10.y)),
        ylim=c(1,nGroups)+c(-0.5,0.5),
@@ -76,6 +77,7 @@ inputList <- input
 # Reproduce the figure shown on web page
 par(mai=c(input$figH*.15, input$figW*.15, 0, input$figW*input$speciesMargin)+0.1,
     omi=rep(0,4))
+pageBreakPDF("Nonparametric\ndistribution fit")
 input2plot <- testData
 input2plot$doses <- testData$responses
 input2plot$logDose <- log10(input2plot$doses)
