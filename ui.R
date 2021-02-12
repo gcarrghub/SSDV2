@@ -68,16 +68,20 @@ shinyUI(
     titlePanel("ES + BMD Tools"),
     sidebarLayout(
       sidebarPanel(
-        actionBttn(
-          inputId="reset_button",
-          label = "Reset Tool",
-          icon = icon("redo"),
-          style = "pill",
-          color = "default",
-          size = "md",
-          block = FALSE,
-          no_outline = TRUE
+        splitLayout(
+          actionBttn(
+            inputId="reset_button",
+            label = "Reset Tool",
+            icon = icon("redo"),
+            style = "pill",
+            color = "default",
+            size = "md",
+            block = FALSE,
+            no_outline = TRUE
+          ),
+          uiOutput("ExampleDownload")
         ),
+        
         #actionButton("reset_button", "Reset Page",icon = icon("redo")),
         ### before, we assigned default vars but current version does not work on that idea
         radioButtons("analysisType",label = "Select Analysis",selected = "SSD",

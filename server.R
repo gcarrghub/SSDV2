@@ -126,6 +126,19 @@ shinyServer(function(input, output, session){
 
     ### show the default variable names (the code is more general, such as ignores case...)
     if(input$analysisType=="SSD"){
+      #this can be mimiced for other analysis examples
+      output$downloadExcelExample <- downloadHandler(
+        filename = "SSD Example.xlsx",
+        content = function(file){
+          file.copy("SSDexample.xlsx", file)
+        }
+      )
+      output$ExampleDownload <- renderUI({
+        req(input$analysisType)
+        #if (input$SSD.complete==0)return(actionButton("dummyButton","DUMMY"))
+        return(downloadBttn('downloadExcelExample', 'SSD Example',"fill"))
+      })
+      
       #The SSD analysis is now generalized to the point that default var names are unnecessary
       output$defaultVars <- NULL
       if(FALSE)output$defaultVars <- renderUI(HTML(
@@ -868,6 +881,7 @@ shinyServer(function(input, output, session){
         if (rvs$SSD.complete==1)return(downloadBttn('downloadExcel', 'Excel Results',"fill"))
       })
 
+      
       output$PDFbutton <- renderUI({
         req(rvs$setupComplete == 1)
         req(rvs$SSD.complete == 1)
