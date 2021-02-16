@@ -475,11 +475,19 @@ shinyServer(function(input, output, session){
     ### as others are added, these will be populated like SSD
     
     #calculate the nonparametric quantiles of the data for all plotting
+    #order the response values before proceeding with analysis
+    testData <- testData[order(testData$responses),]
     xVals <- quantile(log10(testData$responses),probs = seq(0.0001,0.9999,length=10000),type=8)
+    #dummy values are used so that ties don't occur in the y-dimension
+    #(tied data will sort in order they appear)
+    xValsDummy <- quantile(order(testData$responses),probs = seq(0.0001,0.9999,length=10000),type=8)
     yVals <- seq(0.0001,0.9999,length=10000)
-    pointIDs <- sapply(log10(testData$responses),FUN = function(x)which.min(abs(x-xVals)))
-    pointIDs[1] <- max(which(xVals==xVals[1]))
+    pointIDs <- sapply(order(testData$responses),FUN = function(x)which.min(abs(x-xValsDummy)))
+    print(c(pointIDs=pointIDs))
+    pointIDs[1] <- max(which(xValsDummy==xValsDummy[1]))
+    print(c(pointIDs=pointIDs))
     testData$yVals <- yVals[pointIDs]
+    print(c(yVals=yVals[pointIDs]))
     rvs$finalDF <- testData
     
     req(!is.null(rvs$finalDF))
@@ -542,7 +550,26 @@ shinyServer(function(input, output, session){
     #responses are doses strictly > 0
     numericVars <- numericVars[which(colSums(testData[,numericVars,drop=FALSE]<=0)==0)]
     uniqueCounts <- unlist(lapply(testData,FUN = function(x)length(unique(x))))
-    if(length(numericVars)==0 | max(uniqueCounts)<nrow(testData)){stop("There is a problem with your data (no numeric or every var has duplicates)")}
+    #| max(uniqueCounts)<nrow(testData)
+    if(length(numericVars)==0){
+      alerID <- shinyalert(
+        title = "Error",
+        text = "No numeric data found.  Tool will Reset.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "error",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE,
+        callbackR = function(x){js$reset()}
+      )
+      #stop("There is a problem with your data (no numeric or every var has duplicates)")
+      }
     bestResp <- (names(testData)[numericVars])[which(uniqueCounts[numericVars]==max(uniqueCounts[numericVars]))]
     if(length(bestResp)>1){
       print("Break ties on response variable by GOF testing")
