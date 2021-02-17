@@ -498,6 +498,38 @@ shinyServer(function(input, output, session){
     #calculate the nonparametric quantiles of the data for all plotting
     #order the response values before proceeding with analysis
     testData <- testData[order(testData$responses),]
+    if(nrow(testData)<3)alerID <- shinyalert(
+      title = "Error",
+      text = "This analysis requires 3 or more effect values in the data.  Tool will Reset.",
+      closeOnEsc = TRUE,
+      closeOnClickOutside = FALSE,
+      html = FALSE,
+      type = "error",
+      showConfirmButton = TRUE,
+      showCancelButton = FALSE,
+      confirmButtonText = "OK",
+      confirmButtonCol = "#AEDEF4",
+      timer = 0,
+      imageUrl = "",
+      animation = TRUE,
+      callbackR = function(x){js$reset()}
+    )
+    if(sum(testData$responses<=0)>0)alerID <- shinyalert(
+      title = "Error",
+      text = "Effect values must all be greater than zero.  Tool will Reset.",
+      closeOnEsc = TRUE,
+      closeOnClickOutside = FALSE,
+      html = FALSE,
+      type = "error",
+      showConfirmButton = TRUE,
+      showCancelButton = FALSE,
+      confirmButtonText = "OK",
+      confirmButtonCol = "#AEDEF4",
+      timer = 0,
+      imageUrl = "",
+      animation = TRUE,
+      callbackR = function(x){js$reset()}
+    )
     
     xVals <- quantile(log10(testData$responses),probs = seq(0.0001,0.9999,length=10000),type=8)
     #dummy values are used so that ties don't occur in the y-dimension
@@ -578,7 +610,7 @@ shinyServer(function(input, output, session){
     if(length(numericVars)==0){
       alerID <- shinyalert(
         title = "Error",
-        text = "No numeric data found.  Tool will Reset.",
+        text = "No valid numeric data found (check for zero and negative values?).  Tool will Reset.",
         closeOnEsc = TRUE,
         closeOnClickOutside = FALSE,
         html = FALSE,
