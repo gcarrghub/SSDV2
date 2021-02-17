@@ -238,6 +238,8 @@ shinyServer(function(input, output, session){
                      inputDF[,i] <- as.numeric(inputDF[,i])
                    }
                  }
+                 print(inputDF)
+                 print(unlist(lapply(inputDF,is.numeric)))
                  print(c("Data import complete"))
                  rvs$dataImported <- 1
                  rvs$inputDF <- inputDF
@@ -288,6 +290,7 @@ shinyServer(function(input, output, session){
         names(testData) <- c("species","responses")
       }
       print(testData)
+
       print("ready to do formattable() on testData")
       print(head(testData))
       ### once we get here, we can assume that the data have been correctly identified
@@ -338,7 +341,7 @@ shinyServer(function(input, output, session){
       )
       if(!is.numeric(testData$responses))alerID <- shinyalert(
         title = "Warning",
-        text = "Response variable not numeric.\nCheck input!!",
+        text = "Effects variable not numeric.\nCheck input!!",
         closeOnEsc = TRUE,
         closeOnClickOutside = FALSE,
         html = FALSE,
@@ -441,7 +444,7 @@ shinyServer(function(input, output, session){
       )
       if(!is.numeric(testData$responses))alerID <- shinyalert(
         title = "Warning",
-        text = "Response variable not numeric.\nCheck input!!",
+        text = "Effects variable not numeric.\nCheck input!!",
         closeOnEsc = TRUE,
         closeOnClickOutside = FALSE,
         html = FALSE,
@@ -473,10 +476,29 @@ shinyServer(function(input, output, session){
       output$SSDconditional2 <- NULL
     }
     ### as others are added, these will be populated like SSD
-    
+    #at this point, remove data with missing values on response
+    if(sum(is.na(testData$responses))>0){
+      alerID <- shinyalert(
+        title = "Warning",
+        text = "Missing/non-numeric values in effects values will be removed on preview action.  Check if unexpected.",
+        closeOnEsc = TRUE,
+        closeOnClickOutside = FALSE,
+        html = FALSE,
+        type = "warning",
+        showConfirmButton = TRUE,
+        showCancelButton = FALSE,
+        confirmButtonText = "OK",
+        confirmButtonCol = "#AEDEF4",
+        timer = 0,
+        imageUrl = "",
+        animation = TRUE
+      )
+    }
+    testData <- testData[!is.na(testData$responses),]
     #calculate the nonparametric quantiles of the data for all plotting
     #order the response values before proceeding with analysis
     testData <- testData[order(testData$responses),]
+    
     xVals <- quantile(log10(testData$responses),probs = seq(0.0001,0.9999,length=10000),type=8)
     #dummy values are used so that ties don't occur in the y-dimension
     #(tied data will sort in order they appear)
@@ -534,7 +556,7 @@ shinyServer(function(input, output, session){
   })
 
   #on new data import, or a change in analysis type, redo the variable matching
-  #here, instead of everything in one block, do each anlysis type separately
+  #here, instead of everything in one block, do each analysis type separately
   observe({
     req(input$analysisType=="SSD")
     req(rvs$dataImported == 1 & rvs$dataChecked == 0 & rvs$varsChecked == 0)# & is.null(rvs$finalDF))
@@ -546,9 +568,11 @@ shinyServer(function(input, output, session){
     #source("ComboDragDrops.R",local = TRUE)
     print("build variable selections interface")
     print(input$analysisType)
+    print(testData)
     numericVars <- which(unlist(lapply(testData,is.numeric)))
-    #responses are doses strictly > 0
-    numericVars <- numericVars[which(colSums(testData[,numericVars,drop=FALSE]<=0)==0)]
+    #drop variables with negative values because those cannot be valid doses
+    #but, what about missing values here?
+    numericVars <- numericVars[which(colSums(testData[,numericVars,drop=FALSE]<=0,na.rm = TRUE)==0)]
     uniqueCounts <- unlist(lapply(testData,FUN = function(x)length(unique(x))))
     #| max(uniqueCounts)<nrow(testData)
     if(length(numericVars)==0){
@@ -575,7 +599,7 @@ shinyServer(function(input, output, session){
       print("Break ties on response variable by GOF testing")
       print(bestResp)
       gofP <- sapply(bestResp,FUN = function(resVar){
-        x <- log10(testData[,resVar])
+        x <- na.omit(log10(testData[,resVar]))
         ADGofTest::ad.test(x,distr.fun = pnorm,mean=mean(x),sd=sd(x))$p.value
       })
       print(gofP)
