@@ -1,11 +1,13 @@
 ### speciesTF = FALSE is used to override listing species on the right margin.
 ### this is useful for using this same code to set up other plots
 
+print("Running CDF plot code")
 cexLAB <- input$labelSize # size of xlab and ylab
 cexAXIS <- input$axisSize  # tick annotations size on axis
 cexLWD <- input$lineSize  # line width
 cexPCH <- ifelse(cexLWD<1,1,cexLWD*.75)  # plot symbol size
 if(useFIT){
+  print(fitOBJ$distName)
   dFUN <- get(paste0("d",fitOBJ$distName),envir = .GlobalEnv)
   qFUN <- get(paste0("q",fitOBJ$distName),envir = .GlobalEnv)
   xlims <- range(c(log10(c(min(fitOBJ$fitLines[,2]),max(fitOBJ$fitLines[,4]))),log10(input2plot$responses)))

@@ -127,8 +127,13 @@ normFitResults <- SSDfitFUN(
   startVals=NULL,
   quietTF=TRUE,
   inputList = inputList)
-print(normFitResults$fit)
-
+#when a distribution is on real numbers, convert it to positive (eg, log-normal instead of normal)
+#this conversion was worked out by hand.
+normFitResults$LL <- normFitResults$LL - sum(log(log(10)*testData$responses))
+#AIC calc here assumes distribution has two parameters
+normFitResults$AIC <- 2*(2-normFitResults$LL)
+print(normFitResults[c("fit","LL","AIC","distName")])
+normFitResults <<- normFitResults
 
 ### the CDF and PDF plot versions are done in SSDplotCode.R
 ### create input2plot so the code is generically useful, especially for the add one in plots
@@ -145,6 +150,7 @@ source("SSDplotCodeCDF.R",local = TRUE)
 xLegend <- fitOBJ$fit[2]
 data4legend <- testData
 source("addLegend.R",local = TRUE)
+posDistTF <- FALSE
 source("SSDplotCodePDF.R",local = TRUE)
 
 
@@ -174,7 +180,13 @@ logisFitResults <- SSDfitFUN(
   startVals=NULL,
   quietTF=TRUE,
   inputList = inputList)
-
+#when a distribution is on real numbers, convert it to positive (eg, log-normal instead of normal)
+#this conversion was worked out by hand.
+logisFitResults$LL <- logisFitResults$LL - sum(log(log(10)*testData$responses))
+#AIC calc here assumes distribution has two parameters
+logisFitResults$AIC <- 2*(2-logisFitResults$LL)
+print(logisFitResults[c("fit","LL","AIC","distName")])
+logisFitResults <<- logisFitResults
 ### same data for plotting, just need to change the fit result
 fitOBJ <- logisFitResults
 useFIT <- TRUE
@@ -182,6 +194,7 @@ source("SSDplotCodeCDF.R",local = TRUE)
 xLegend <- fitOBJ$fit[2]
 data4legend <- testData
 source("addLegend.R",local = TRUE)
+posDistTF <- FALSE
 source("SSDplotCodePDF.R",local = TRUE)
 
 #leave one out is easy, but computationally expensive
@@ -298,7 +311,7 @@ if(doLeaveOneOut){
   data4legend <- testData
   xLegend <- fitOBJ$fit[2]
   source("addLegend.R",local = TRUE)
-
+  posDistTF <- FALSE
   source("SSDplotCodePDF.R",local = TRUE)
   for(i in 2:nrow(fit.out.norm)){
     xVals <- seq(xMins[i],xMaxs[i],length=1000)
@@ -337,7 +350,7 @@ if(doLeaveOneOut){
   data4legend <- testData
   xLegend <- fitOBJ$fit[2]
   source("addLegend.R",local = TRUE)
-
+  posDistTF <- FALSE
   source("SSDplotCodePDF.R",local = TRUE)
   for(i in 2:nrow(fit.out.logis)){
     xVals <- seq(xMins[i],xMaxs[i],length=1000)
@@ -566,6 +579,201 @@ if(doAddOneIn){
   #rgl.quit()#clean up the rgl stuff
 }
 
+if(input$doAvg){
+  par(mai=rep(0.1,4),omi=rep(0,4))
+  pageBreakPDF("Gumbel\ndistribution fit")
+  dgumbel.evd <<- evd::dgumbel
+  pgumbel.evd <<- evd::pgumbel
+  qgumbel.evd <<- evd::qgumbel
+  stepProgress <- stepProgress+1
+  #setProgress(value = stepProgress/Nsteps, detail="Logistic fit")
+  print("Call SSDfitFUN for Gumbel")
+  gumbelFitResults <- SSDfitFUN(
+    pllData=testData$responses,
+    speciesLabels=testData$species,
+    distName="gumbel.evd",
+    xlabString=paste0(input$xLab," (",input$units,")"),
+    effectLevel=input$ECXvalue.SSD,
+    gridSize=50,
+    titleString=NULL,
+    italicFont=3,
+    xlimVals=NULL,
+    printSpeciesLabels=TRUE,
+    showUpper=FALSE,
+    roundTo=NULL,
+    doPlots=FALSE,
+    par1.LB=-Inf,
+    par2.LB=-Inf,
+    confLevel=0.95,
+    logTransform=TRUE,
+    startVals=NULL,
+    quietTF=TRUE,
+    inputList = inputList)
+  #when a distribution is on real numbers, convert it to positive (eg, log-normal instead of normal)
+  #this conversion was worked out by hand.
+  gumbelFitResults$LL <- gumbelFitResults$LL - sum(log(log(10)*testData$responses))
+  #AIC calc here assumes distribution has two parameters
+  gumbelFitResults$AIC <- 2*(2-gumbelFitResults$LL)
+  print(gumbelFitResults[c("fit","LL","AIC","distName")])
+  gumbelFitResults <<- gumbelFitResults
+  ### same data for plotting, just need to change the fit result
+  fitOBJ <- gumbelFitResults
+  useFIT <- TRUE
+  source("SSDplotCodeCDF.R",local = TRUE)
+  xLegend <- fitOBJ$fit[2]
+  data4legend <- testData
+  source("addLegend.R",local = TRUE)
+  posDistTF <- FALSE
+  source("SSDplotCodePDF.R",local = TRUE)
+  
+  
+  pageBreakPDF("Gamma\ndistribution fit")
+  stepProgress <- stepProgress+1
+  #setProgress(value = stepProgress/Nsteps, detail="Logistic fit")
+  gammaFitResults <- SSDfitFUN(
+    pllData=testData$responses,
+    speciesLabels=testData$species,
+    distName="gamma",
+    xlabString=paste0(input$xLab," (",input$units,")"),
+    effectLevel=input$ECXvalue.SSD,
+    gridSize=50,
+    titleString=NULL,
+    italicFont=3,
+    xlimVals=NULL,
+    printSpeciesLabels=TRUE,
+    showUpper=FALSE,
+    roundTo=NULL,
+    doPlots=FALSE,
+    par1.LB=-Inf,
+    par2.LB=-Inf,
+    confLevel=0.95,
+    logTransform=FALSE,
+    startVals=NULL,
+    quietTF=TRUE,
+    inputList = inputList)
+  #AIC calc here assumes distribution has two parameters
+  gammaFitResults$AIC <- 2*(2-gammaFitResults$LL)
+  print(gammaFitResults[c("fit","LL","AIC","distName")])
+  gammaFitResults <<- gammaFitResults
+  
+  ### same data for plotting, just need to change the fit result
+  fitOBJ <- gammaFitResults
+  useFIT <- TRUE
+  source("SSDplotCodeCDF.R",local = TRUE)
+  xLegend <- fitOBJ$fit[2]
+  data4legend <- testData
+  source("addLegend.R",local = TRUE)
+  posDistTF <- TRUE
+  source("SSDplotCodePDF.R",local = TRUE)
+  
+  
+  pageBreakPDF("Gompertz\ndistribution fit")
+  stepProgress <- stepProgress+1
+  #setProgress(value = stepProgress/Nsteps, detail="Logistic fit")
+  testDataOUT <<- testData
+  dgompertz.eha <<- eha::dgompertz
+  pgompertz.eha <<- eha::pgompertz
+  qgompertz.eha <<- eha::qgompertz
+  
+  gompertzFitResults <- SSDfitFUN(
+    pllData=testData$responses,
+    speciesLabels=testData$species,
+    distName="gompertz.eha",
+    xlabString=paste0(input$xLab," (",input$units,")"),
+    effectLevel=input$ECXvalue.SSD,
+    gridSize=50,
+    titleString=NULL,
+    italicFont=3,
+    xlimVals=NULL,
+    printSpeciesLabels=TRUE,
+    showUpper=FALSE,
+    roundTo=NULL,
+    doPlots=FALSE,
+    par1.LB=-Inf,
+    par2.LB=-Inf,
+    confLevel=0.95,
+    logTransform=FALSE,
+    startVals=NULL,
+    quietTF=TRUE,
+    inputList = inputList)
+  #AIC calc here assumes distribution has two parameters
+  gompertzFitResults$AIC <- 2*(2-gompertzFitResults$LL)
+  print(gompertzFitResults[c("fit","LL","AIC","distName")])
+  gompertzFitResults <<- gompertzFitResults
+  
+  ### same data for plotting, just need to change the fit result
+  fitOBJ <- gompertzFitResults
+  useFIT <- TRUE
+  source("SSDplotCodeCDF.R",local = TRUE)
+  xLegend <- fitOBJ$fit[2]
+  data4legend <- testData
+  source("addLegend.R",local = TRUE)
+  posDistTF <- TRUE
+  source("SSDplotCodePDF.R",local = TRUE)
+  
+  
+  pageBreakPDF("Weibull\ndistribution fit")
+  stepProgress <- stepProgress+1
+  #setProgress(value = stepProgress/Nsteps, detail="Logistic fit")
+  weibullFitResults <- SSDfitFUN(
+    pllData=testData$responses,
+    speciesLabels=testData$species,
+    distName="weibull",
+    xlabString=paste0(input$xLab," (",input$units,")"),
+    effectLevel=input$ECXvalue.SSD,
+    gridSize=50,
+    titleString=NULL,
+    italicFont=3,
+    xlimVals=NULL,
+    printSpeciesLabels=TRUE,
+    showUpper=FALSE,
+    roundTo=NULL,
+    doPlots=FALSE,
+    par1.LB=-Inf,
+    par2.LB=-Inf,
+    confLevel=0.95,
+    logTransform=FALSE,
+    startVals=NULL,
+    quietTF=TRUE,
+    inputList = inputList)
+  #AIC calc here assumes distribution has two parameters
+  weibullFitResults$AIC <- 2*(2-weibullFitResults$LL)
+  print(weibullFitResults[c("fit","LL","AIC","distName")])
+  weibullFitResults <<- weibullFitResults
+  ### same data for plotting, just need to change the fit result
+  fitOBJ <- weibullFitResults
+  useFIT <- TRUE
+  source("SSDplotCodeCDF.R",local = TRUE)
+  xLegend <- fitOBJ$fit[2]
+  data4legend <- testData
+  source("addLegend.R",local = TRUE)
+  posDistTF <- TRUE
+  source("SSDplotCodePDF.R",local = TRUE)
+  
+  distDF <- data.frame(
+    distName=c("Normal","Logistic","Gumbel","Gamma","Weibull","Gompertz"),
+    LL=c(normFitResults$LL,logisFitResults$LL,gumbelFitResults$LL,gammaFitResults$LL,weibullFitResults$LL,gompertzFitResults$LL),
+    AIC=c(normFitResults$AIC,logisFitResults$AIC,gumbelFitResults$AIC,gammaFitResults$AIC,weibullFitResults$AIC,gompertzFitResults$AIC)
+  )
+  ## The best model is the one with the largest log-likelihood, or smallest AIC
+  distDF$Delta <- distDF$AIC-min(distDF$AIC)
+  distDF$Weight <- exp(-0.5*distDF$Delta)/sum(exp(-0.5*distDF$Delta))
+  distDF <- cbind(
+    distDF,
+    rbind(normFitResults$fit,logisFitResults$fit,gumbelFitResults$fit,gammaFitResults$fit,weibullFitResults$fit,gompertzFitResults$fit)
+  )
+  distDF <- distDF[order(-1*distDF$Weight),]
+  distDF <- distDF[,-match(c("mean","sd"),table = names(distDF))]
+  #print(distDF)
+  distAVG <- data.frame(distName="Average",as.data.frame(rbind(distDF$Weight)%*%as.matrix(distDF[,6:9])))
+  
+  distDF <- rbind(
+    data.frame(c(distDF, sapply(setdiff(names(distAVG), names(distDF)), function(x) NA))),
+    data.frame(c(distAVG, sapply(setdiff(names(distDF), names(distAVG)), function(x) NA)))
+  )
+  print(distDF)
+}
+
 dev.off()
 ### Main results
 resultsTable <- rbind(normFitResults$fit,logisFitResults$fit,
@@ -574,6 +782,7 @@ resultsTable <- rbind(normFitResults$fit,logisFitResults$fit,
                         rep(NA,length(normFitResults$fit)-2)))
 #save(list="resultsTable",file="resTab.RData")
 print(resultsTable)
+print("Writing XLSX file")
 source("write2xlsxSSD.R",local = TRUE)
 print("SSD analyses complete")
 print("SSD analyses complete")

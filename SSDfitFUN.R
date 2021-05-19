@@ -23,6 +23,9 @@ SSDfitFUN <- function(
 
   #par(cex.lab=input$labelSize, cex.axis=input$axisSize, cex.main=1.2, cex.sub=1.2)
 
+  if(is.element(distName,c("norm","logis","gumbel.evd")))par2.LB <- 1e-12
+  if(is.element(distName,c("gamma","weibull","gompertz.eha")))par1.LB <- par2.LB <- 1e-12
+  
   if(logTransform)pllData <- log10(pllData)
   #reorder
   newOrder <- order(pllData)
@@ -42,6 +45,11 @@ SSDfitFUN <- function(
   if( is.null(startVals))MLE.fit <- rriskFitdist.GJC(data=pllData,distr=distName)
   if(!is.null(startVals))MLE.fit <- rriskFitdist.GJC(data=pllData,distr=distName,start=startVals)
   MLE.pars <- MLE.fit$estimate
+  if(!quietTF){
+    print(MLE.fit)
+    print("MLE.pars")
+    print(MLE.pars)
+  }
   if(parsONLY)return(MLE.pars)
   if(!is.null(startVals))names(MLE.pars)<-names(formals(dFUN))[2:3]
   MLE.pars.sd <- MLE.fit$sd
@@ -55,23 +63,99 @@ SSDfitFUN <- function(
 
   #the figure is also informative; this region is independent of ECx level chosen
   enclosedTF <- FALSE
-  par1.down <- par1.up <- par2.down <- par2.up <- 1
+  par1.down <- par1.up <- par2.down <- par2.up <- 2
   regionSize <- gridSize
+  par1Small <- par2Small <- par1Large <- par2Large <- FALSE
+  loopCt <- 0
+  minPar1 <- max(par1.LB,MLE.pars[1]-par1.down*MLE.pars.sd[1])
+  maxPar1 <- MLE.pars[1]+par1.up*MLE.pars.sd[1]
+  minPar2 <- max(par2.LB,MLE.pars[2]-par2.down*MLE.pars.sd[2])
+  maxPar2 <- MLE.pars[2]+par2.up*MLE.pars.sd[2]
+  if(minPar1 == par1.LB)minPar1
+  #if(strictPOS | FALSE){
+  #  if(minPar1<0)minPar1 <- .1
+  #  if(minPar2<0)minPar2 <- .1
+  #}
+  
   while(!enclosedTF){
-    testGrid <- expand.grid(
-      par1Vals<-seq(max(par1.LB,MLE.pars[1]-par1.down*MLE.pars.sd[1]),MLE.pars[1]+par1.up*MLE.pars.sd[1],length=regionSize),
-      par2Vals<-seq(max(par2.LB,MLE.pars[2]-par2.down*MLE.pars.sd[2]),MLE.pars[2]+par2.up*MLE.pars.sd[2],length=regionSize))
-    testGrid.LL <- matrix(2*(apply(testGrid,1,FUN=function(pars){generalLL(pars,pllData)})-MLE.LL),ncol=regionSize)
-    testGrid.HC05 <- matrix(apply(testGrid,1,FUN=function(pars){qFUN(0.05,pars[1],pars[2])}),ncol=regionSize)
-    edges <- c(par2low<-testGrid.LL[,1],par2high<-testGrid.LL[,regionSize],par1low<-testGrid.LL[1,],par1high<-testGrid.LL[regionSize,])
+    loopCt <- loopCt + 1
+    if(minPar1==par1.LB)par1Vals<-seq(minPar1,maxPar1,length=regionSize+1)[-1]
+    if(minPar1 >par1.LB)par1Vals<-seq(minPar1,maxPar1,length=regionSize)
+    if(minPar2==par2.LB)par2Vals<-seq(minPar2,maxPar2,length=regionSize+1)[-1]
+    if(minPar2 >par2.LB)par2Vals<-seq(minPar2,maxPar2,length=regionSize)
+    # stay off of the bound values - code below will move it closer if necessary
+    minPar1 <- par1Vals[1]
+    minPar2 <- par2Vals[1]
+    if(!quietTF){
+      print(par1Vals)
+      print(par2Vals)
+    }
+    #if(strictPOS | FALSE){
+    #    par1Vals <- par1Vals[par1Vals>0]
+    #    par2Vals <- par2Vals[par2Vals>0]
+    #    #par2Vals <- c(par2Vals[1]/c(1000,300,100,30,10,3),par2Vals)
+    #  }
+     #if(par1Large)par1Vals <- c(par1Vals,max(par1Vals)*c(3,10,30,100,300,1000))
+    #if(par2Large)par2Vals <- c(par2Vals,max(par2Vals)*c(3,10,30,100,300,1000))
+    par1Size <- length(par1Vals)
+    par2Size <- length(par2Vals)
+    testGrid <- expand.grid(par1Vals,par2Vals)
+    testGrid.LL <- matrix(2*(apply(testGrid,1,FUN=function(pars){generalLL(pars,pllData)})-MLE.LL),ncol=par1Size)
+    testGrid.HC05 <- matrix(apply(testGrid,1,FUN=function(pars){qFUN(0.05,pars[1],pars[2])}),ncol=par1Size)
+    gridDIM <- dim(testGrid.LL)
+    #testGrid.LL <<- testGrid.LL
+    if(!quietTF){
+      print(c(par1Size=par1Size,par2Size=par2Size))
+      print("gridDIM")
+      print(gridDIM)
+      print(par1Vals)
+      print(par2Vals)
+      print(apply(matrix(as.numeric(abs(testGrid.LL)<CI.critval),ncol=par1Size),
+                  1,paste,collapse=" "))
+    }
+    edges <- c(par2low<-testGrid.LL[,1],par2high<-testGrid.LL[,par1Size],par1low<-testGrid.LL[1,],par1high<-testGrid.LL[par2Size,])
     if(!any(abs(edges)<CI.critval))enclosedTF <- TRUE
     if(any(abs(edges)<CI.critval)){
-      if(any(abs(par2low )<CI.critval))par2.down <- par2.down+0.5
-      if(any(abs(par2high)<CI.critval))par2.up   <- par2.up  +0.5
-      if(any(abs(par1low )<CI.critval))par1.down <- par1.down+0.5
-      if(any(abs(par1high)<CI.critval))par1.up   <- par1.up  +0.5
+      if(any(abs(par2low )<CI.critval)){
+        par2.down <- par2.down+0.5
+        par2Small <- TRUE
+        testPar2 <- MLE.pars[2]-par2.down*MLE.pars.sd[2]
+        if(testPar2<=par2.LB)minPar2 <- (minPar2-par2.LB)/2
+        if(testPar2 >par2.LB)minPar2 <- testPar2
+      }
+      if(any(abs(par2high)<CI.critval)){
+        par2.up   <- par2.up  +0.5
+        par2Large <- TRUE
+        maxPar2 <- MLE.pars[2]+par2.up*MLE.pars.sd[2]
+      }
+      if(any(abs(par1low )<CI.critval)){
+        par1.down <- par1.down+0.5
+        par1Small <- TRUE
+        testPar1 <- MLE.pars[1]-par1.down*MLE.pars.sd[1]
+        if(testPar1<=par1.LB)minPar1 <- (minPar1-par2.LB)/2
+        if(testPar1 >par1.LB)minPar1 <- testPar1
+      }
+      if(any(abs(par1high)<CI.critval)){
+        par1.up   <- par1.up  +0.5
+        par1Large <- TRUE
+        maxPar1 <- MLE.pars[1]+par1.up*MLE.pars.sd[1]
+      }
     }
-    if(!quietTF)print(c(par1.down=par1.down,par1.up=par1.up,par2.down=par2.down,par2.up=par2.up))
+    if(!quietTF){
+      print(c(minPar1=minPar1,maxPar1=maxPar1,minPar2=minPar2,maxPar2=maxPar2))
+      plot(x=testGrid[,1],y=testGrid[,2],xlab="",ylab="",
+           bty="n",type="n",las=1)
+      points(x=testGrid[,1],
+             y=testGrid[,2])
+      points(x=testGrid[abs(as.vector(testGrid.LL))<CI.critval,1],
+             y=testGrid[abs(as.vector(testGrid.LL))<CI.critval,2],
+             lwd=1,col="black",pch=16)
+      mtext(side=1,outer=TRUE,line=-1.25,text = names(MLE.pars)[1],cex = 1.2,padj=0)
+      mtext(side=2,outer=TRUE,line=-0.35,text = names(MLE.pars)[2],cex = 1.2,padj=1)
+      mtext(side=1,outer=TRUE,text=paste("Distribution:",distName),line=-1,adj=0)
+    }
+    
+    if(loopCt>10)break
   }
   testGrid.LL.vec <- as.vector(testGrid.LL)
   #cLine is the bounding line (in x,y pairs) for the confidence region on the distribution
@@ -86,9 +170,9 @@ SSDfitFUN <- function(
     #####################################################################################
     #####################################################################################
     #####################################################################################
-    cexAXIS <- inputList$axisSize
-    cexLAB <- inputList$labelSize
-    cexLWD <- inputList$lineSize
+    cexAXIS <- 1
+    cexLAB <- 1
+    cexLWD <- 2
     cexPCH <- ifelse(cexLWD<1,1,cexLWD*.75)
     print(c(cexAXIS=cexAXIS,cexLAB=cexLAB,cexLWD=cexLWD))
     plot(x=testGrid[,1],y=testGrid[,2],xlab="",ylab="",
@@ -148,7 +232,10 @@ SSDfitFUN <- function(
   if( logTransform)ciVals <- t(sapply(pVals,FUN=function(ppp)10^range(apply(cbind(cLine$x,cLine$y),1,FUN=function(pars)do.call(qFUN,as.list(c(p=ppp,pars)))))))
   if(!logTransform)ciVals <- t(sapply(pVals,FUN=function(ppp)   range(apply(cbind(cLine$x,cLine$y),1,FUN=function(pars)do.call(qFUN,as.list(c(p=ppp,pars)))))))
   #ciVals[pVals==0.05,]
-  if(!quietTF)print(head(ciVals))
+  if(!quietTF){
+    print("head(ciVals)")
+    print(head(ciVals))
+  }
 
   #if(doPlots){
   #require(ADGofTest)
@@ -170,19 +257,38 @@ SSDfitFUN <- function(
     }
   }
   if(!is.null(xlimVals))xlims <- xlimVals
-  if(!quietTF)print(rbind(
+  if(!quietTF){
+    print("xlim Vals")
+    print(rbind(
     c(xlims=xlims),
     c(range=10^range(pllData))
   ))
+  }
+  if(!quietTF){
+    print("HC05 input parms")
+    c(list(p=effectLevel),as.list(MLE.pars))
+  }
   if( logTransform)HC05All <- 10^do.call(qFUN,c(list(p=effectLevel),as.list(MLE.pars)))
   if(!logTransform)HC05All <-    do.call(qFUN,c(list(p=effectLevel),as.list(MLE.pars)))
+  if(!quietTF){
+    print("HC05All")
+    print(HC05All)
+  }
   LCL.HC05All <- ciVals[pVals==effectLevel,1]
   UCL.HC05All <- ciVals[pVals==effectLevel,2]
+  if(!quietTF){
+    print("LCL.HC05All")
+    print(LCL.HC05All)
+  }
+  print(LCL.HC05All)
   #find params that go with ci endpoints
   ciParms05 <- cbind(cLine$x,cLine$y,apply(cbind(cLine$x,cLine$y),1,FUN=function(pars)do.call(qFUN,as.list(c(p=effectLevel,pars)))))
   ciParms05.LCL <- ciParms05[which.min(ciParms05[,3]),1:2]
   ciParms05.UCL <- ciParms05[which.max(ciParms05[,3]),1:2]
-  if(!quietTF)print(rbind(ciParms05.LCL,ciParms05.UCL))
+  if(!quietTF){
+    print("rbind(ciParms05.LCL,ciParms05.UCL)")
+    print(rbind(ciParms05.LCL,ciParms05.UCL))
+  }
 
 
 
@@ -211,10 +317,10 @@ SSDfitFUN <- function(
     #####################################################################################
     par(
       mai=c(
-        inputList$figH*.15,
-        inputList$figW*.15,
+        8*.15,
+        8*.15,
         0,
-        inputList$figW*inputList$speciesMargin)+0.1,
+        8*0.2)+0.1,
       omi=rep(0,4))
     if( logTransform)plot(x=modelVals,y=pVals,ylim=c(0,1),xlim=xlims,
                           log='x',
@@ -227,7 +333,7 @@ SSDfitFUN <- function(
                           xlab="",
                           ylab="",
                           axes=FALSE,main=titleString)
-    xlabBuild <- paste0(inputList$xLab," (",inputList$units,")")
+    xlabBuild <- "Effect Values (units)"
     mtext(side=1,outer=TRUE,line=-1.25,text = xlabBuild,cex = cexLAB,padj=0)
     mtext(side=2,outer=TRUE,line=-0.35,text = "Probability",cex = cexLAB,padj=1)
     mtext(side=1,outer=TRUE,text=paste("Distribution:",distName),line=-1,adj=0)
@@ -269,7 +375,7 @@ SSDfitFUN <- function(
             at=order(pllData)/(max(order(pllData))+1),
             text=speciesLabels,
             las=2,
-            family="serif",font = 3,cex=inputList$speciesSize)
+            family="serif",font = 3,cex=0.5)
     }
     #points(x=(pllData),y=1 - 1/(1 + predictedValues),col=8,pch=16)
     if(!showUpper)abline(h=effectLevel,v=c(LCL.HC05All,HC05All),col='gray')
@@ -283,52 +389,78 @@ SSDfitFUN <- function(
     #####################################################################################
     #####################################################################################
     #####################################################################################
-
-
-    #####################################################################################
-    #####################################################################################
-    #####################################################################################
-    par(
-      mai=c(
-        inputList$figH*.15,
-        inputList$figW*.15,
-        0,
-        0)+0.1,
-      omi=rep(0,4))
-
-    xVals <- seq(par("usr")[1],par("usr")[2],length=1000)
-    ylimMax <- max(c(
-      dFUN(xVals,ciParms05.LCL[1],ciParms05.LCL[2]),
-      dFUN(xVals,ciParms05.UCL[1],ciParms05.UCL[2]),
-      dFUN(xVals,MLE.pars[1],MLE.pars[2])))
-
-    if( logTransform){
-      plot(x=modelVals,y=rep(0,length(modelVals)),ylim=c(0,ylimMax),log='x',
-           type='n',xlab="",ylab="",axes=F,main=titleString,xlim=xlims)
+    if(!logTransform & is.element(distName,c("weibull","gamma","gompertz.eha"))){
+      par(
+        mai=c(
+          8*.15,
+          8*.15,
+          0,
+          8*0.2)+0.1,
+        omi=rep(0,4))
+      xlims <- range(c(LCL.HC05All,pllData))
+      xlims[1] <- 10^floor(log10(xlims[1]))
+      xlims[2] <- 10^ceiling(log10(xlims[2]))
+      plot(x=xlims,y=0*xlims,ylim=c(0,1),xlim=xlims,
+                            log='x',
+                            type='n',
+                            xlab="",
+                            ylab="",
+                            axes=FALSE,main=titleString)
+      xlabBuild <- "Effect Values (units)"
       mtext(side=1,outer=TRUE,line=-1.25,text = xlabBuild,cex = cexLAB,padj=0)
-      mtext(side=2,outer=TRUE,line=-0.35,text = "Distribution Density",cex = cexLAB,padj=1)
+      mtext(side=2,outer=TRUE,line=-0.35,text = "Probability",cex = cexLAB,padj=1)
       mtext(side=1,outer=TRUE,text=paste("Distribution:",distName),line=-1,adj=0)
-      majorTicks <- 10^seq(ceiling(par("usr")[1]),floor(par("usr")[2]))
-      axis(side=1,at=majorTicks,label=majorTicks,lwd=cexLWD)
-      axis(side=1,at=10^as.vector(sapply(ceiling(par("usr")[1]):(ceiling(par("usr")[2])-1),FUN=function(x)x+log10(1:9))),
-           tck=-.01,labels=FALSE,lwd=cexLWD/2)
-      axis(side=2,cex.axis=cexAXIS,cex.lab=cexLAB,lwd=cexLWD,las=1)
-      lines(y=dFUN(xVals,MLE.pars[1],MLE.pars[2]),x=10^xVals,lwd=1.5*cexLWD,col="blue")
-      lines(y=dFUN(xVals,ciParms05.LCL[1],ciParms05.LCL[2]),x=10^xVals,col="cyan",lwd=1.5*cexLWD)
-      lines(y=dFUN(xVals,ciParms05.UCL[1],ciParms05.UCL[2]),x=10^xVals,col="cyan",lwd=1.5*cexLWD,lty=2)
-      rug(side=1,x=10^pllData,lwd=cexLWD,col=rgb(0,0,0,.2))
-      abline(v=HC05All,col='gray')
-      abline(v=LCL.HC05All,col='cyan')
-      if(showUpper)abline(v=UCL.HC05All,col='cyan',lty=2)
-      points(x=HC05All,y=dFUN(log10(HC05All),MLE.pars[1],MLE.pars[2]))
-      points(x=LCL.HC05All,y=dFUN(log10(LCL.HC05All),ciParms05.LCL[1],ciParms05.LCL[2]),col="cyan")
-      points(x=UCL.HC05All,y=dFUN(log10(UCL.HC05All),ciParms05.UCL[1],ciParms05.UCL[2]),col="cyan")
+      axis(side=2,las=1,
+           cex.axis=cexAXIS,
+           cex.lab=cexLAB,
+           lwd=cexLWD)
+      if(logTransform){
+        majorTicks <- 10^seq(ceiling(par("usr")[1]),floor(par("usr")[2]))
+        axis(side=1,at=majorTicks,label=majorTicks,
+             cex.axis=cexAXIS,
+             cex.lab=cexLAB,
+             lwd=cexLWD)
+        axis(side=1,at=10^as.vector(sapply(ceiling(par("usr")[1]):(ceiling(par("usr")[2])-1),FUN=function(x)x+log10(1:9))),
+             tck=-.01,labels=FALSE,
+             cex.axis=cexAXIS,
+             cex.lab=cexLAB,
+             lwd=cexLWD/2)
+      }
+      if(!logTransform)axis(side=1,
+                            cex.axis=cexAXIS,
+                            cex.lab=cexLAB,
+                            lwd=cexLWD)
+      #      mtext(side=1,expression(paste("Concentration (",mu,"g/L)")),line=3)
+      if( logTransform)points(x=10^pllData,y=order(pllData)/(max(order(pllData))+1),col='gray',pch=16,cex=cexPCH)
+      if(!logTransform)points(x=   pllData,y=order(pllData)/(max(order(pllData))+1),col='gray',pch=16,cex=cexPCH)
+      
+      lines(x=ciVals[,1],y=pVals,col="cyan",lwd=cexLWD)
+      lines(x=ciVals[,2],y=pVals,col="cyan",lwd=cexLWD)
+      lines(x=modelVals,y=pVals,col="blue",lwd=cexLWD*1.5)
+      if(!quietTF & logTransform){
+        lines(x=10^qFUN(pVals,ciParms05.LCL[1],ciParms05.LCL[2]),y=pVals,col="cyan")
+        lines(x=10^qFUN(pVals,ciParms05.UCL[1],ciParms05.UCL[2]),y=pVals,col="cyan")
+      }
+      
+      #predictedValues <- exp((log(pllData) - interceptParam)/scaleParam)
+      if(printSpeciesLabels){
+        mtext(side=4,
+              at=order(pllData)/(max(order(pllData))+1),
+              text=speciesLabels,
+              las=2,
+              family="serif",font = 3,cex=0.5)
+      }
+      #points(x=(pllData),y=1 - 1/(1 + predictedValues),col=8,pch=16)
+      if(!showUpper)abline(h=effectLevel,v=c(LCL.HC05All,HC05All),col='gray')
+      if(showUpper)abline(h=effectLevel,v=c(LCL.HC05All,HC05All,UCL.HC05All),col='gray')
       if(!is.null(roundTo))CItexts <- format(round(c(LCL.HC05All,HC05All,UCL.HC05All),roundTo))
-      if(is.null(roundTo))CItexts <- sapply(signif(c(LCL.HC05All,HC05All,UCL.HC05All),3),format)
+      if(is.null(roundTo))CItexts <- sapply(signif(c(LCL.HC05All,HC05All,UCL.HC05All),3),format,digits=3)
+      #print(CItexts)
       mtext(side=3,at=HC05All*.85,text=bquote(HC[.(round(100*effectLevel))]==.(CItexts[2])),adj=1,las=2,line=-.1)
       mtext(side=3,at=LCL.HC05All*.85,text=bquote(LCL==.(CItexts[1])),adj=1,las=2,line=-.1)
       if(showUpper)mtext(side=3,at=UCL.HC05All*.85,text=bquote(UCL==.(CItexts[3])),adj=1,las=2,line=-.1)
     }
+    
 
 
   }
@@ -350,7 +482,8 @@ SSDfitFUN <- function(
            dFUN(log(UCL.HC05All),ciParms05.UCL[1],ciParms05.UCL[2])
          )
        ),
-       distName=distName)
+       distName=distName,
+       LL=MLE.LL)
   result
 }
 
@@ -586,7 +719,8 @@ genericPLL.AddOne <- function(
 
 
   }
-  list(fit=c(X=effectLevel,HCx=HC05All,LowerCL=LCL.HC05All,UpperCL=UCL.HC05All,MLE.pars),CI.line=cbind(pVals,ciVals))
+  list(fit=c(X=effectLevel,HCx=HC05All,LowerCL=LCL.HC05All,UpperCL=UCL.HC05All,MLE.pars),
+       CI.line=cbind(pVals,ciVals))
 }
 
 
