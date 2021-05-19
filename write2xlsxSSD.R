@@ -3,7 +3,6 @@ addWorksheet(wb = wb, sheetName = "Data Listing", gridLines = FALSE)
 
 # Output the raw data
 unitSTR <- paste0("(",input$units,")")
-
 if(!input$doGrps){
   writeData(wb = wb,sheet = 1,x = testData[,c("species","responses")],startCol = 1,startRow = 3,colNames = FALSE)
   writeData(wb = wb,sheet = 1,x = data.frame(X1="Species",X2="Response"),
@@ -27,15 +26,18 @@ speciesStyle <- createStyle(
 )
 
 getPlacesFMT <- function(x){
-  x <- na.omit(x)
+  x <- abs(na.omit(x))
+  #print(x)
   places2print <- floor(min(log10(x)))-1
+  #print(places2print)
   places2print <- ifelse(places2print<0,yes = abs(places2print),no = 0)
+  #print(places2print)
   paste0("0.",paste0(rep("0",places2print),collapse = ""))
 }
 #checking
-getPlacesFMT(testData$responses)
-getPlacesFMT(testData$responses/1000)
-getPlacesFMT(testData$responses*1000)
+#getPlacesFMT(testData$responses)
+#getPlacesFMT(testData$responses/1000)
+#getPlacesFMT(testData$responses*1000)
 
 numFMT <- openxlsx::createStyle(fontSize=18,numFmt = getPlacesFMT(testData$responses))
 
@@ -76,6 +78,7 @@ for(i in SC.res + 1:(ncol(RES.DF.noparms)-1)){
   )
   addStyle(wb = wb,sheet = 1,style = colStyle,rows = 2+(1:nrow(RES.DF.noparms)),cols = i)
 }
+print(RES.parms)
 for(i in (1:2)){
   colStyle <- createStyle(
     fontSize = 18,
@@ -83,6 +86,7 @@ for(i in (1:2)){
   )
   addStyle(wb = wb,sheet = 1,style = colStyle,rows = 2+(1:nrow(RES.parms)),cols = i+SC.res+10-1)
 }
+
 # row label of results
 addStyle(wb = wb,sheet = 1,style = createStyle(fontSize=18),
          rows = 2+(1:nrow(RES.DF)),cols = SC.res,gridExpand = TRUE,stack = TRUE)
@@ -209,4 +213,11 @@ if(doAddOneIn){
   writeData(wb,x = fit.out[,-1],
             sheet="AddOneIn",startRow=7,startCol=1,colNames = FALSE)
 }
+
+if(input$doAvg){
+  addWorksheet(wb,sheetName = "ModelAvg")
+  writeData(wb,x = distDF,
+            sheet="ModelAvg",startRow=1)
+}
+
 saveWorkbook(wb = wb,file = "SSDoutput.xlsx",overwrite = TRUE)

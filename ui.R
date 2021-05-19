@@ -1,7 +1,9 @@
+installedPackages <- rownames(installed.packages())
 packages = unique(c("devtools","shiny","shinyjs","shinyalert","shinyWidgets",# only if for table output
                     "htmlwidgets","magrittr","parallel","formattable","DT",
-                    "RColorBrewer","multcomp","openxlsx","ADGofTest"))
-packageTests <- sapply(packages,FUN = require,character.only=TRUE)
+                    "RColorBrewer","multcomp","openxlsx","ADGofTest",
+                    "eha","evd"))
+packageTests <- packages %in% installedPackages
 if(all(packageTests)){
   cat("\n",paste(rep("#",100),collapse = ""),
       "\n  All required packages are present.",
@@ -16,7 +18,8 @@ if(sum(!packageTests)>0){
   install.packages(packages[!packageTests], repos = "https://cran.rstudio.com/", dependencies=TRUE)
   ### In one case, needed to add this to a users install.packages call:  INSTALL_opts = c('--no-lock')
   # recheck for packages
-  packageTests <- sapply(packages,FUN = require,character.only=TRUE)
+  installedPackages <- rownames(installed.packages())
+  packageTests <- packages %in% installedPackages
   if(all(packageTests)){
     cat("\n",paste(rep("#",100),collapse = ""),
         "\n  All required packages were successfully installed.",
@@ -99,8 +102,10 @@ shinyUI(
         ###),
         # in the server, these SSD inputs are NULLed out if the analysis is not SSD
         uiOutput("SSDoptshead"),
-        splitLayout(uiOutput("SSD.2.1"),uiOutput("SSD.2.2"),uiOutput("SSD.2.3"),#cellWidths = "33%",
-                    cellArgs = list(style = c("align: left","align: center","align: right"))),
+        splitLayout(uiOutput("SSD.2.1"),uiOutput("SSD.2.2"),
+                    cellArgs = list(style = c("align: left","align: right"))),
+        splitLayout(uiOutput("SSD.2.3"),uiOutput("SSD.2.6"),#cellWidths = "33%",
+                    cellArgs = list(style = c("align: left","align: right"))),
         uiOutput("effectSelects"),
         textAreaInput("pasteData",label="Data with column labels:",rows=3,
                       placeholder = "Click inside this box and paste data (copied from Excel or similar)."),

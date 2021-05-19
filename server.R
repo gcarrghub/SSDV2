@@ -160,6 +160,9 @@ shinyServer(function(input, output, session){
       output$SSD.2.3 <- renderUI({
         checkboxInput(inputId = "doGrps",label = "Grouping",value = FALSE)
       })
+      output$SSD.2.6 <- renderUI({
+        checkboxInput(inputId = "doAvg",label = "Model Averaging",value = FALSE)
+      })
       output$SSD.2.4 <- renderUI({
         checkboxInput(inputId = "doGrays",label = "Grayscale",value = TRUE)
       })
@@ -173,6 +176,7 @@ shinyServer(function(input, output, session){
       output$SSD.2.3 <- NULL
       output$SSD.2.4 <- NULL
       output$SSD.2.5 <- NULL
+      output$SSD.2.6 <- NULL
       output$SSDoptshead <- NULL
     }
   })
@@ -494,6 +498,7 @@ shinyServer(function(input, output, session){
         animation = TRUE
       )
     }
+    rvs$preSort <- testData
     testData <- testData[!is.na(testData$responses),]
     #calculate the nonparametric quantiles of the data for all plotting
     #order the response values before proceeding with analysis

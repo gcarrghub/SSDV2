@@ -5,13 +5,13 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
   rriskMLEdistGJC <- function (data, distr, start = NULL, optim.method = "default",
                                lower = -Inf, upper = Inf, custom.optim = NULL, ...)
   {
-    if (distr == "triang")
-      require(mc2d)
-    if (distr == "gompertz")
-      require(eha)
+    if (distr == "triang")require(mc2d)
+    #if (distr == "gompertz")require(eha)
+    #if (distr == "gumbel")require(reliaR)
+    #if (distr == "gompertz")require(eha)
+    #if (distr == "gumbel")require(actuar)
     if (!is.character(distr)) {
-      distname <- substring(as.character(match.call()$distr),
-                            2)
+      distname <- substring(as.character(match.call()$distr),2)
     }
     else distname <- distr
     ddistname <- paste("d", distname, sep = "")
@@ -76,6 +76,9 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
         m <- mean(data)
         v <- (n - 1)/n * var(data)
         start <- list(shape = m^2/v, rate = m/v)
+        lower <- c(0,0)+1e-6
+        upper <- c(Inf,Inf)
+        optim.method <- "L-BFGS-B"
       }
       else if (distname == "nbinom") {
         n <- length(data)
@@ -115,12 +118,25 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
         shape <- 1.2/sqrt(v)
         scale <- exp(m + 0.572/shape)
         start <- list(shape = shape, scale = scale)
+        lower <- c(0,0)+1e-6
+        upper <- c(Inf,Inf)
+        optim.method <- "L-BFGS-B"
       }
       else if (distname == "logis") {
         n <- length(data)
         m <- mean(data)
         v <- (n - 1)/n * var(data)
         start <- list(location = m, scale = sqrt(3 * v)/pi)
+      }
+      else if (distname == "gumbel.evd") {
+        #https://en.wikipedia.org/wiki/Gumbel_distribution
+        n <- length(data)
+        m <- mean(data)
+        sigStart <- sd(data)*sqrt(6)/pi
+        start <- list(loc = m-sigStart*0.57721, scale = sigStart)
+        lower <- c(-Inf,1e-12)
+        upper <- c(Inf,Inf)
+        optim.method <- "L-BFGS-B"
       }
       else if (distname == "chisq") {
         if (any(data < 0))
@@ -133,7 +149,7 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
         df2.start <- 2 * mean(data)/(mean(data) - 1)
         start <- list(df1 = 3, df2 = df2.start)
       }
-      else if (distname == "gompertz") {
+      else if (distname == "gompertz.eha") {
         if (any(data < 0))
           stop("values must be positive to fit a Gompertz distribution")
         scale.start <- sd(data) * sqrt(6)/pi
@@ -141,7 +157,10 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
         shape.start <- (scale.start * exp(mean(data)/scale.start +
                                             gamma.const))^(-1)
         start <- list(shape = shape.start, scale = scale.start)
-      }
+        lower <- c(0,0)+1e-6
+        upper <- c(Inf,Inf)
+        optim.method <- "L-BFGS-B"
+       }
       else if (distname == "cauchy") {
         start <- list(location = median(data), scale = IQR(data)/2)
       }
@@ -199,6 +218,13 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
     else meth = optim.method
     if (is.null(custom.optim)) {
       if (!cens) {
+        print("Fitting")
+        print(c(method=meth))
+        print(c(lower=lower))
+        print(c(upper=upper))
+        print(ddistname)
+        print(start)
+
         opttryerror <- try(opt <- optim(par = vstart, fn = fnobj,
                                         obs = data, ddistnam = ddistname, hessian = TRUE,
                                         method = meth, lower = lower, upper = upper,
@@ -254,8 +280,7 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
 
 
   if (!is.character(distr))
-    distname <- substring(as.character(match.call()$distr),
-                          2)
+    distname <- substring(as.character(match.call()$distr),2)
   else distname <- distr
   ddistname <- paste("d", distname, sep = "")
   if (!exists(ddistname, mode = "function"))
@@ -284,9 +309,11 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
     if (missing(start))
       mle <- rriskMLEdistGJC(data, distname, ...)
     else mle <- rriskMLEdistGJC(data, distname, start, ...)
-    if (mle$convergence > 0)
+    if (mle$convergence > 0){
+      print(mle)
       stop("the function mle failed to estimate the parameters, \n                with the error code ",
            mle$convergence, "\n")
+    }
     estimate <- mle$estimate
     if (!is.null(mle$hessian)) {
       if (all(!is.na(mle$hessian))) {
