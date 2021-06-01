@@ -574,7 +574,9 @@ shinyServer(function(input, output, session){
       tagList(
         h3("Finalize inputs above",style="color: red"))})
     print(c(dataImported = rvs$dataImported, dataChecked=rvs$dataChecked,nullFinal = as.numeric(!is.null(rvs$finalDF))))
+    
     req(rvs$dataImported == 1 & rvs$dataChecked == 1 & !is.null(rvs$finalDF))
+    
     updateTabsetPanel(session, "outputTabActive",selected = "Output")
     output$graphOpts <- renderUI({
       tagList(

@@ -88,8 +88,8 @@ shinyUI(
         #actionButton("reset_button", "Reset Page",icon = icon("redo")),
         ### before, we assigned default vars but current version does not work on that idea
         radioButtons("analysisType",label = "Select Analysis",selected = "SSD",
-                     choiceValues = list("Count","BMD","SK","Continuous","SSD"),
-                     choiceNames=list("LCx","Binary BMD","Spearman-Karber","BV","SSD")
+                     choiceValues = list("Count","BMD","SK","Continuous","SSD")[5],
+                     choiceNames=list("LCx","Binary BMD","Spearman-Karber","BV","SSD")[5]
         ),
         ### splitLayout(
         ###   radioButtons("analysisType",label = "Select Analysis",selected = "SSD",
