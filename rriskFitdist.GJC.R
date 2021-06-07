@@ -317,9 +317,16 @@ rriskFitdist.GJC <- function (data, distr, method = c("mle", "mme"), start, chis
     estimate <- mle$estimate
     if (!is.null(mle$hessian)) {
       if (all(!is.na(mle$hessian))) {
-        varcovar <- solve(mle$hessian)
-        sd <- sqrt(diag(varcovar))
-        correl <- cov2cor(varcovar)
+        varcovar <- try(solve(mle$hessian))
+        if(class(varcovar)[1]!="try-error"){
+          sd <- sqrt(diag(varcovar))
+          correl <- cov2cor(varcovar)
+        }else
+        {
+          varcovar <- NA
+          sd <- NA
+          correl <- NA
+        }
       }
       else {
         varcovar <- NA
